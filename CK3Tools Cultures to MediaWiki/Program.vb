@@ -239,6 +239,14 @@ Module Program
                     If Code(Count).Contains("|E]") Then
                         Code(Count) = DeConcept(Code(Count))
                     End If
+                    If Code(Count).Contains("$") Then
+                        Dim RawLoc As List(Of String) = {Code(Count)}.ToList
+                        Do
+                            RawLoc(0) = RawLoc(0).Split("$"c, 2).Last
+                            Code(Count) = Code(Count).Replace($"${Code(Count).Split("$"c, 3)(1)}$", RawLoc(0))
+                            GetLocalisation(RawLoc, RawLocalisation, LocalisationFiles)
+                        Loop While RawLoc(0).Contains("$")
+                    End If
                 End If
             End If
         Next
@@ -276,6 +284,14 @@ Module Program
             End If
             If Code(Count).Contains("|E]") Then
                 Code(Count) = DeConcept(Code(Count))
+            End If
+            If Code(Count).Contains("$") Then
+                Dim RawLoc As List(Of String) = {Code(Count)}.ToList
+                Do
+                    RawLoc(0) = RawLoc(0).Split("$"c, 2).Last
+                    Code(Count) = Code(Count).Replace($"${Code(Count).Split("$"c, 3)(1)}$", RawLoc(0))
+                    GetLocalisation(RawLoc, RawLocalisation, LocalisationFiles)
+                Loop While RawLoc(0).Contains("$")
             End If
         Next
     End Sub
