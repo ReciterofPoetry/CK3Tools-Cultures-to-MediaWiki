@@ -232,7 +232,7 @@ Module Program
                         End Using
                     Next
                 Else
-                    Code(Count) = RawLocalisation.Find(Function(x) x.TrimStart.StartsWith($"{RawCode}:")).Split(Chr(34), 3)(1)
+                    Code(Count) = RawLocalisation.FindLast(Function(x) x.TrimStart.StartsWith($"{RawCode}:")).Split(Chr(34), 3)(1)
                     If Code(Count).Contains("#"c) Then
                         Code(Count) = DeFormat(Code(Count))
                     End If
@@ -267,7 +267,7 @@ Module Program
                         End Using
                     Next
                 Else
-                    Traditions(TraditionCount) = RawLocalisation.Find(Function(x) x.TrimStart.StartsWith($"{RawCode}:")).Split(Chr(34), 3)(1)
+                    Traditions(TraditionCount) = RawLocalisation.FindLast(Function(x) x.TrimStart.StartsWith($"{RawCode}:")).Split(Chr(34), 3)(1)
                 End If
             Next
             Code(Count) = "* " & String.Join(vbCrLf & "* ", Traditions)
