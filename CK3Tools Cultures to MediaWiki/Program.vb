@@ -1,15 +1,27 @@
 Imports System.IO
 Friend Module Props
-    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
+    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2216659254"
     Property BaseDir As String = Environment.CurrentDirectory
+    Property GameDir As String
 End Module
 Module Program
 #Disable Warning IDE0044 ' Add readonly modifier
     Dim GameConceptLocalisations As New SortedList(Of String, String)
+    Dim RawLocalisation As New List(Of String)
+    Dim LocalisationFiles As List(Of String)
 #Enable Warning IDE0044 ' Add readonly modifier
     Sub Main()
 
+        SetGameDir()
+
         Dim FileList As List(Of String) = Directory.GetFiles(BaseDir & "\common\culture\pillars", "*.txt", SearchOption.AllDirectories).ToList
+        With FileList
+            .Reverse()
+            Dim BaseFileList As List(Of String) = Directory.GetFiles(GameDir & "\common\culture\pillars", "*.txt", SearchOption.AllDirectories).ToList
+            BaseFileList.Reverse()
+            FileList = .Concat(BaseFileList).ToList
+        End With
+
         Dim HeritageFiles As New List(Of String)
         For Each TextFile In FileList
             Using SR As New StreamReader(TextFile)
@@ -24,26 +36,54 @@ Module Program
 
         Dim Heritages As New List(Of String)
         For Each TextFile In HeritageFiles
-            Dim Text() As String = File.ReadAllText(TextFile).Split(vbCrLf & "}" & vbCrLf)
-            For Each Block In Text
-                If Block.Contains("type") AndAlso Block.Split("type", 2)(1).Split(vbCrLf, 2)(0).Contains("heritage") Then
-                    Dim Hold() As String = {Block.Split("{"c, 2)(0).Trim}
-                    Dim Heritage As String
-                    If Hold(0).Contains("="c) Then
-                        Heritage = Hold(0).Split("="c, 2)(0).Trim
-                    Else
-                        Hold = Hold(0).Split
-                        Heritage = Hold(Hold.Length - 2)
-                    End If
-                    If Heritage.Contains(vbCrLf) Then
-                        Heritage = Heritage.Split(vbCrLf).Last
-                    End If
-                    Heritages.Add(Heritage)
+            Dim Text As String = File.ReadAllText(TextFile)
+            Dim Blocks As New SortedList(Of String, String)
+            Do
+                Dim RawObject As String = Text.Split("{"c, 2).First
+                Dim Block As String = Text.Split("{"c, 2).Last
+                RawObject = RawObject.Split("="c, 2).First.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, StringSplitOptions.None).Last
+                If Block.Split("}"c, 2).First.Contains("{"c) Then
+                    Do
+                        Block = String.Join(">"c, String.Join("<"c, Block.Split("{"c, 2)).Split("}"c, 2))
+                    Loop While Split("}"c, 2).First.Contains("{"c)
+                End If
+                Block = Block.Split("}"c, 2).First.Replace("<", "{").Replace(">", "}")
+                If Not RawObject.StartsWith("#"c) Then
+                    Blocks.Add(RawObject, Block)
+                End If
+                Text = Text.Split(Block, 2).Last.Split("}", 2).Last
+            Loop While Text.Split("}"c, 2).First.Contains("{"c)
+            For Each Block In Blocks.Keys
+                If Blocks(Block).Contains("type") AndAlso Blocks(Block).Split("type", 2)(1).Split(vbCrLf, 2)(0).Contains("heritage") Then
+                    Heritages.Add(Block)
                 End If
             Next
         Next
 
         Heritages.Sort()
+
+        Dim NamedColours As New SortedList(Of String, String)
+        Dim NamedColourFiles As New List(Of String)
+        With NamedColourFiles
+            If Directory.Exists(BaseDir & "common\named_colors") Then
+                NamedColourFiles = .Concat(Directory.GetFiles(BaseDir & "common\named_colors")).ToList
+                .Reverse()
+            End If
+            Dim BaseNamedColourFiles As List(Of String) = Directory.GetFiles(GameDir & "common\named_colors").ToList
+            .Reverse()
+            NamedColourFiles = .Concat(BaseNamedColourFiles).ToList
+        End With
+        For Each ColourFile In NamedColourFiles
+            Dim Text As String = File.ReadAllText(ColourFile).Split("colors", 2).Last.Split("{"c, 2).Last.TrimEnd.TrimEnd("}"c)
+            Do
+                Dim Name As String = Text.Split("="c, 2).First.TrimEnd.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, StringSplitOptions.None).Last
+                Dim Colour As String = Text.Split("{"c, 2).Last.Split("}"c, 2).First.Trim
+                If Not Text.Split(Name, 2).Last.Split("}"c, 2).First.Contains("hsv") Then
+                    NamedColours.Add(Name, Colour)
+                End If
+                Text = Text.Split(Colour, 2).Last.Split("}"c, 2).Last
+            Loop While Text.Contains("="c)
+        Next
 
         Dim CultureFiles As List(Of String) = Directory.GetFiles(BaseDir & "\common\culture\cultures", "*.txt", SearchOption.AllDirectories).ToList
         Dim RawCultures As New List(Of String)
@@ -70,8 +110,9 @@ Module Program
             End If
             Cultures.Add(Culture.Trim(vbTab))
 
-            Dim Heritage As String = Block.Split("heritage", 2)(1).Split("="c, 2)(1).Split(vbCrLf, 2)(0).Trim
+            Dim Heritage As String = Block.Split("heritage", 2)(1).Split("="c, 2).Last.TrimStart.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.Trim
             Dim Count As Integer = Heritages.FindIndex(Function(x) x.Equals(Heritage))
+
             If Not HeritageCultures.ContainsKey(Count) Then
                 HeritageCultures.Add(Count, Cultures.Count - 1)
             Else
@@ -79,7 +120,14 @@ Module Program
             End If
 
             If Block.Contains("color") Then
-                Dim Colour As String = Block.Split("color", 2)(1).Split("{"c, 2)(1).Split("}"c)(0).Trim
+                Dim Colour As String = Block.Split("color", 2).Last.Split("="c, 2).Last.Split({vbCrLf, vbCr, vbLf}, StringSplitOptions.None).First.Split("{"c, 2).Last.Split("}"c).First.Trim
+                If Not Colour.Replace(" "c, "").Replace("."c, "").All(AddressOf Char.IsDigit) Then
+                    If NamedColours.ContainsKey(Colour) Then
+                        Colour = NamedColours(Colour)
+                    Else
+                        Colour = "255 255 255"
+                    End If
+                End If
                 If Colour.Contains("."c) Then
                     Dim Hold() As String = Colour.Split
                     For Count = 0 To Hold.Length - 1
@@ -142,7 +190,20 @@ Module Program
             Next
         End If
 
-        Dim LocalisationFiles As List(Of String) = Directory.GetFiles(BaseDir & "\localization\english", "*.yml", SearchOption.AllDirectories).Concat(Directory.GetFiles(BaseDir & "\localization\replace\english", "*.yml", SearchOption.AllDirectories)).ToList
+        If Directory.Exists(BaseDir & "\localization\english") Then
+            LocalisationFiles = Directory.GetFiles(BaseDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
+        Else
+            Console.WriteLine("Sorry, non-English localisation not currently supported. Press any key to exit.")
+            Console.ReadKey()
+            Exit Sub
+        End If
+        If Directory.Exists(BaseDir & "\localization\replace\english") Then
+            LocalisationFiles = LocalisationFiles.Concat(Directory.GetFiles(BaseDir & "\localization\replace\english", "*.yml", SearchOption.AllDirectories)).ToList
+        End If
+        LocalisationFiles.Reverse()
+        Dim BaseFiles As List(Of String) = Directory.GetFiles(GameDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
+        BaseFiles.Reverse()
+        LocalisationFiles = LocalisationFiles.Concat(BaseFiles).ToList
 
         Dim RawGameConceptLocalisations As New List(Of String)
         For Each TextFile In LocalisationFiles
@@ -150,6 +211,9 @@ Module Program
                 Dim LineData As String
                 While Not SR.EndOfStream
                     LineData = SR.ReadLine
+                    If LineData.StartsWith(" stress_icon_tooltip:0") Then
+                        Stop
+                    End If
                     If LineData Like "*game_concept*" AndAlso Not LineData Like "*$game_concept*" Then
                         RawGameConceptLocalisations = RawGameConceptLocalisations.Concat(File.ReadAllLines(TextFile)).ToList
                         Exit While
@@ -157,27 +221,35 @@ Module Program
                 End While
             End Using
         Next
+        RawGameConceptLocalisations.RemoveAll(Function(x) Not x.TrimStart.StartsWith("game_concept"))
 
         For Each Item In RawGameConceptLocalisations
-            If Item Like "*game_concept*" Then
-                Dim GameConcept As String = Item.Split(":")(0).Split("game_concept_")(1)
-                If Not GameConceptLocalisations.ContainsKey(GameConcept) Then
-                    GameConceptLocalisations.Add(Item.Split(":")(0).Split("game_concept_")(1), Item.Split(Chr(34))(1))
-                Else
-                    GameConceptLocalisations(GameConcept) = Item.Split(Chr(34))(1)
-                End If
+            If Not GameConceptLocalisations.ContainsKey(Item.Split(":"c).First.Split("game_concept_").Last) Then
+                GameConceptLocalisations.Add(Item.Split(":"c).First.Split("game_concept_").Last, DeFormat(DeComment(Item.Split(Chr(34), 2).Last).TrimEnd.TrimEnd(Chr(34))))
+            Else
+                GameConceptLocalisations(Item.Split(":"c).First.Split("game_concept_").Last) = DeFormat(DeComment(Item.Split(Chr(34), 2).Last).TrimEnd.TrimEnd(Chr(34)))
+            End If
+        Next
+        For Count = 0 To GameConceptLocalisations.Count - 1
+            If GameConceptLocalisations.Values(Count).Contains("$"c) Then
+                Dim Key As String = GameConceptLocalisations.Keys(Count)
+                GameConceptLocalisations(Key) = DeReference(GameConceptLocalisations.Values(Count))
             End If
         Next
 
-        Dim RawLocalisation As List(Of String) = VanillaLoc()
+        ' = VanillaLoc()
 
-        GetLocalisation(Heritages, RawLocalisation, LocalisationFiles, "_name")
-        GetLocalisation(Cultures, RawLocalisation, LocalisationFiles)
-        GetLocalisation(Ethoses, RawLocalisation, LocalisationFiles, "_name")
-        GetTraditionLocalisation(Traditions, RawLocalisation, LocalisationFiles, "_name")
-        GetLocalisation(Languages, RawLocalisation, LocalisationFiles, "_name")
-        GetLocalisation(MartialCustoms, RawLocalisation, LocalisationFiles, "_name")
-        GetLocalisation(CultureDescriptions, RawLocalisation, LocalisationFiles)
+        GetLocalisation(Heritages, "_name")
+        GetLocalisation(Cultures)
+        GetLocalisation(Ethoses, "_name")
+        For Count = 0 To Traditions.Count - 1
+            Dim Code As List(Of String) = Traditions(Count).Split(" "c).ToList
+            GetLocalisation(Code, "_name")
+            Traditions(Count) = $"* {String.Join(vbCrLf & "* ", Code)}"
+        Next
+        GetLocalisation(Languages, "_name")
+        GetLocalisation(MartialCustoms, "_name")
+        GetLocalisation(CultureDescriptions)
 
         Dim OutputFile As String = File.ReadAllLines(BaseDir & "/descriptor.mod").ToList.Find(Function(x) x.StartsWith("name=")).Split(Chr(34), 3)(1)
         OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\{String.Concat(OutputFile.Split(Path.GetInvalidFileNameChars))} Cultures.txt"
@@ -189,7 +261,6 @@ Module Program
                 SW.WriteLine("! Heritage !! Culture !! Ethos !! Traditions !! Language !! Martial Custom !! Description")
             End If
             For Each Heritage In HeritageCultures.Keys
-                Dim Value As String
                 Dim CultureList As List(Of String) = HeritageCultures(Heritage).Split().ToList
                 SW.WriteLine($"|-{vbCrLf}| rowspan=""{CultureList.Count}"" | '''{Heritages(Heritage)}'''")
                 For Count = 0 To CultureList.Count - 1
@@ -208,259 +279,164 @@ Module Program
         Console.WriteLine("Successfully deposited output to desktop. Press any key to close.")
         Console.ReadKey()
     End Sub
-    Private Sub GetLocalisation(ByRef Code As List(Of String), ByRef RawLocalisation As List(Of String), ByRef LocalisationFiles As List(Of String), Optional Suffix As String = "")
+    Private Sub GetLocalisation(ByRef Code As List(Of String), Optional Suffix As String = "")
+        Dim RawRecentLocalisation As New List(Of String) 'Experimental.
         For Count = 0 To Code.Count - 1
-            If Not Code(Count) = "" Then
-                Dim RawCode As String = Code(Count) & Suffix
-                If Not RawLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) Then
+            If Not Code(Count) = "" AndAlso Not Code(Count).TrimStart.StartsWith("game_concept") Then
+                Dim RawCode As String = Code(Count) & Suffix 'Modify the code if the object id has a suffix in the loc code.
+                If Not RawRecentLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) AndAlso Not RawLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) AndAlso Not GameConceptLocalisations.ContainsKey(RawCode) Then 'If base game loc or previously parsed files did not contain loc for this object then look for it in the files.
+                    Dim CompareToCheckIfLocWasFound As String = Code(Count) 'Preserve the original object id.
                     For Each TextFile In LocalisationFiles
                         Using SR As New StreamReader(TextFile)
                             While Not SR.EndOfStream
                                 Dim LineData As String = SR.ReadLine
-                                If LineData.TrimStart.StartsWith($"{RawCode}:") Then
-                                    RawLocalisation = RawLocalisation.Concat(File.ReadAllLines(TextFile)).ToList
-                                    Code(Count) = LineData.Split(Chr(34), 3)(1)
+                                If LineData.TrimStart.StartsWith($"{RawCode}:") Then 'If loc for the object has been found...
+                                    RawRecentLocalisation = RawRecentLocalisation.Concat(File.ReadAllLines(TextFile)).ToList 'Add the files contents into the recently parsed list.
+                                    RawLocalisation = RawLocalisation.Concat(File.ReadAllLines(TextFile)).ToList 'And the overall list.
+                                    If LineData.Split(Chr(34)).Last.Contains("#") Then 'If there are any comments after the actual loc code then remove them.
+                                        LineData = DeComment(LineData)
+                                    End If
+                                    Code(Count) = LineData.Split(Chr(34), 2).Last.TrimEnd.TrimEnd(Chr(34)) 'Remove the quotation marks.
                                     If Code(Count).Contains("#"c) Then
-                                        Code(Count) = DeFormat(Code(Count))
+                                        Code(Count) = DeFormat(Code(Count)) 'If the loc has any style formatting remove them.
                                     End If
                                     If Code(Count).Contains("|E]") Then
-                                        Code(Count) = DeConcept(Code(Count))
+                                        Code(Count) = DeConcept(Code(Count)) 'If the loc has any game concepts then add in the proper names for them.
+                                    End If
+                                    If Code(Count).Contains("$") Then 'If the loc refers to any other loc, then get that loc's name.
+                                        Code(Count) = DeReference(Code(Count))
                                     End If
                                     Exit For
                                 End If
                             End While
                         End Using
                     Next
-                Else
-                    Code(Count) = RawLocalisation.Find(Function(x) x.TrimStart.StartsWith($"{RawCode}:")).Split(Chr(34), 3)(1)
+                    If Code(Count) = CompareToCheckIfLocWasFound Then 'If no loc was found then add in a note.
+                        Code(Count) &= Suffix
+                    End If
+                ElseIf RawRecentLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) Then 'If the loc for the code exists in recently parsed files then get it from there. Note: Not working as intended but not broken.
+                    Code(Count) = RawRecentLocalisation.FindLast(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) 'Find the loc in the list.
+
+                    'Process the loc for internal code.
+
+                    If Code(Count).Split(Chr(34)).Last.Contains("#") Then
+                        Code(Count) = DeComment(Code(Count))
+                    End If
+                    Code(Count) = Code(Count).Split(Chr(34), 2).Last.TrimEnd.TrimEnd(Chr(34))
                     If Code(Count).Contains("#"c) Then
                         Code(Count) = DeFormat(Code(Count))
                     End If
                     If Code(Count).Contains("|E]") Then
                         Code(Count) = DeConcept(Code(Count))
                     End If
+                    If Code(Count).Contains("$") Then
+                        Code(Count) = DeReference(Code(Count))
+                    End If
+                ElseIf RawLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) Then 'If the loc was not in the recently parsed files then check the overall parsed files.
+                    Code(Count) = RawLocalisation.FindLast(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) 'Find the loc in the list.
+
+                    'Process the loc for internal code.
+
+                    If Code(Count).Split(Chr(34)).Last.Contains("#") Then
+                        Code(Count) = DeComment(Code(Count))
+                    End If
+                    Code(Count) = Code(Count).Split(Chr(34), 2).Last.TrimEnd.TrimEnd(Chr(34))
+                    If Code(Count).Contains("#"c) Then
+                        Code(Count) = DeFormat(Code(Count))
+                    End If
+                    If Code(Count).Contains("|E]") Then
+                        Code(Count) = DeConcept(Code(Count))
+                    End If
+                    If Code(Count).Contains("$") Then
+                        Code(Count) = DeReference(Code(Count))
+                    End If
+                ElseIf GameConceptLocalisations.ContainsKey(RawCode) Then
+                    Code(Count) = GameConceptLocalisations(RawCode)
                 End If
+            ElseIf Code(Count).TrimStart.StartsWith("game_concept") Then
+                Code(Count) = GameConceptLocalisations(Code(Count).Split("game_concept_").Last)
             End If
         Next
     End Sub
-    Private Sub GetTraditionLocalisation(ByRef Code As List(Of String), ByRef RawLocalisation As List(Of String), ByRef LocalisationFiles As List(Of String), Optional Suffix As String = "")
-        For Count = 0 To Code.Count - 1
-            Dim Traditions As List(Of String)
-            If Code(Count).Contains(" "c) Then
-                Traditions = Code(Count).Split.ToList
-            Else
-                Traditions = {Code(Count)}.ToList
-            End If
-            For TraditionCount = 0 To Traditions.Count - 1
-                Dim RawCode As String = Traditions(TraditionCount) & Suffix
-                If Not RawLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) Then
-                    For Each TextFile In LocalisationFiles
-                        Using SR As New StreamReader(TextFile)
-                            While Not SR.EndOfStream
-                                Dim LineData As String = SR.ReadLine
-                                If LineData.TrimStart.ToLower.StartsWith($"{RawCode}:") Then
-                                    RawLocalisation = RawLocalisation.Concat(File.ReadAllLines(TextFile)).ToList
-                                    Traditions(TraditionCount) = LineData.Split(Chr(34), 3)(1)
-                                    Exit For
-                                End If
-                            End While
-                        End Using
-                    Next
-                Else
-                    Traditions(TraditionCount) = RawLocalisation.Find(Function(x) x.TrimStart.StartsWith($"{RawCode}:")).Split(Chr(34), 3)(1)
-                End If
-            Next
-            Code(Count) = "* " & String.Join(vbCrLf & "* ", Traditions)
-            If Code(Count).Contains("#"c) Then
-                Code(Count) = DeFormat(Code(Count))
-            End If
-            If Code(Count).Contains("|E]") Then
-                Code(Count) = DeConcept(Code(Count))
-            End If
-        Next
+    Sub SetGameDir()
+        If BaseDir.Contains("steamapps") Then
+            GameDir = BaseDir.Split("steamapps", 2).First & "steamapps\common\Crusader Kings III\game\"
+        Else
+            GameDirPrompt()
+        End If
     End Sub
-    Function VanillaLoc() As List(Of String)
-        Return New List(Of String)({
-" ethos_bellicose_name:0 ""Bellicose""",
-" ethos_stoic_name:0 ""Stoic""",
-" ethos_bureaucratic_name:1 ""Bureaucratic""",
-" ethos_spiritual_name:0 ""Spiritual""",
-" ethos_courtly_name:0 ""Courtly""",
-" ethos_egalitarian_name:0 ""Egalitarian""",
-" ethos_communal_name:0 ""Communal""",
-" martial_custom_equal_name:0 ""Equal""",
-" martial_custom_male_only_name:0 ""Men Only""",
-" martial_custom_female_only_name:0 ""Women Only""",
-" tradition_court_eunuchs_name:0 ""Court Eunuchs""",
-" tradition_byzantine_succession_name:1 ""Byzantine Traditions""",
-" tradition_african_tolerance_name:0 ""African Tolerance""",
-" tradition_memories_of_bactria_name:0 ""Memories of Bactria""",
-" tradition_equal_inheritance_name:0 ""Equal Inheritance""",
-" tradition_the_witenagemot_name:0 ""The Witenagemot""",
-" tradition_things_name:1 ""Ting-Meet""",
-" tradition_caravaneers_name:0 ""Caravaneers""",
-" tradition_xenophilic_name:0 ""Xenophilic""",
-" tradition_legalistic_name:0 ""Legalistic""",
-" tradition_warrior_culture_name:0 ""Warrior Culture""",
-" tradition_philosopher_culture_name:0 ""Philosopher Culture""",
-" tradition_chivalry_name:0 ""Chivalry""",
-" tradition_hit_and_run_name:0 ""Hit-and-Run Tacticians""",
-" tradition_stand_and_fight_name:0 ""Stand and Fight!""",
-" tradition_horse_lords_name:0 ""Horse Lords""",
-" tradition_adaptive_skirmishing_name:0 ""Adaptive Skirmishers""",
-" tradition_formation_fighting_name:0 ""Formation Fighting Experts""",
-" tradition_republican_legacy_name:0 ""Republican Legacy""",
-" tradition_hereditary_hierarchy_name:0 ""Hereditary Hierarchy""",
-" tradition_theocratic_autonomy_name:0 ""Theocratic Autonomy""",
-" tradition_saharan_nomads_name:0 ""Saharan Nomads""",
-" tradition_himalayan_settlers_name:0 ""Himalayan Settlers""",
-" tradition_esteemed_hospitality_name:0 ""Esteemed Hospitality""",
-" tradition_hard_working_name:0 ""Industrious""",
-" tradition_loyal_soldiers_name:1 ""Loyal Subjects""",
-" tradition_female_only_inheritance_name:0 ""Matriarchal""",
-" tradition_pacifism_name:0 ""Pacifists""",
-" tradition_scientific_curiosity_name:0 ""Scientific Curiosity""",
-" tradition_spartan_name:0 ""Spartan""",
-" tradition_tribe_unity_name:0 ""Tribal Unity""",
-" tradition_astute_diplomats_name:0 ""Astute Diplomats""",
-" tradition_collective_lands_name:0 ""Collective Lands""",
-" tradition_horse_breeder_name:0 ""Horse Breeders""",
-" tradition_hunters_name:0 ""Prolific Hunters""",
-" tradition_sacred_mountains_name:0 ""Sacred Mountains""",
-" tradition_culinary_art_name:0 ""Culinary Artists""",
-" tradition_festivities_name:0 ""Frequent Festivities""",
-" tradition_tea_ceremony_name:0 ""Tea Ceremonies""",
-" tradition_vegetarianism_name:0 ""Vegetarians""",
-" tradition_alpine_supremacy_name:0 ""Alpine Supremacy""",
-" tradition_seafaring_name:0 ""Seafarers""",
-" tradition_strength_display_name:0 ""Displays of Strength""",
-" tradition_mystical_ancestors_name:0 ""Mystical Ancestors""",
-" tradition_priestly_caste_name:0 ""Priestly Caste""",
-" tradition_religion_blending_name:0 ""Religion Blending""",
-" tradition_religious_festivities_name:0 ""Religious Festivities""",
-" tradition_religious_patronage_name:0 ""Religious Patronage""",
-" tradition_medicinal_plants_name:0 ""Medicinal Herbalists""",
-" tradition_storytellers_name:0 ""Storytellers""",
-" tradition_sacred_hunts_name:0 ""Sacred Hunts""",
-" tradition_wedding_ceremonies_name:1 ""Marital Ceremonies""",
-" tradition_music_theory_name:0 ""Musical Theorists""",
-" tradition_poetry_name:0 ""Refined Poetry""",
-" tradition_culture_blending_name:0 ""Culture Blending""",
-" tradition_family_entrepreneurship_name:0 ""Family Business""",
-" tradition_fishermen_name:0 ""Dexterous Fishermen""",
-" tradition_metal_craftsmanship_name:0 ""Metalworkers""",
-" tradition_isolationist_name:0 ""Isolationist""",
-" tradition_winter_warriors_name:0 ""Winter Warriors""",
-" tradition_forest_fighters_name:0 ""Forest Fighters""",
-" tradition_mountaineers_name:0 ""Mountaineers""",
-" tradition_warriors_of_the_dry_name:0 ""Warriors of the Dry""",
-" tradition_highland_warriors_name:0 ""Highland Warriors""",
-" tradition_jungle_warriors_name:0 ""Jungle Warriors""",
-" tradition_only_the_strong_name:0 ""Only the Strong""",
-" tradition_warriors_by_merit_name:0 ""Warriors by Merit""",
-" tradition_warrior_monks_name:0 ""Warrior Priests""",
-" tradition_talent_acquisition_name:0 ""Recognition of Talent""",
-" tradition_strength_in_numbers_name:0 ""Strength in Numbers""",
-" tradition_frugal_armorsmiths_name:0 ""Frugal Armorers""",
-" tradition_malleable_invaders_name:0 ""Malleable Invaders""",
-" tradition_quarrelsome_name:0 ""Quarrelsome""",
-" tradition_swords_for_hire_name:0 ""Swords for Hire""",
-" tradition_reverence_for_veterans_name:0 ""Reverence for Veterans""",
-" tradition_stalwart_defenders_name:0 ""Stalwart Defenders""",
-" tradition_battlefield_looters_name:0 ""Battlefield Looters""",
-" tradition_fervent_temple_builders_name:0 ""Fervent Temple Builders""",
-" tradition_lords_of_the_elephant_name:0 ""Lords of the Elephant""",
-" tradition_zealous_people_name:0 ""Strong Believers""",
-" tradition_welcoming_name:1 ""Charismatic""",
-" tradition_agrarian_name:0 ""Agrarian""",
-" tradition_eye_for_an_eye_name:0 ""Eye for an Eye""",
-" tradition_forbearing_name:0 ""Forbearing""",
-" tradition_equitable_name:0 ""Equitable""",
-" tradition_charitable_name:0 ""Charitable""",
-" tradition_modest_name:0 ""Modest""",
-" tradition_hill_dwellers_name:0 ""Hill Dwellers""",
-" tradition_forest_folk_name:0 ""Forest Folk""",
-" tradition_mountain_homes_name:0 ""Mountain Homes""",
-" tradition_dryland_dwellers_name:0 ""Dryland Dwellers""",
-" tradition_jungle_dwellers_name:0 ""Jungle Dwellers""",
-" tradition_faith_bound_name:0 ""Bound by Faith""",
-" tradition_by_the_sword_name:0 ""By the Sword""",
-" tradition_language_scholars_name:0 ""Linguists""",
-" tradition_pastoralists_name:0 ""Pastorialists""",
-" tradition_desert_nomads_name:1 ""Desert Travelers""",
-" tradition_gardening_name:0 ""Garden Architects""",
-" tradition_monogamous_name:0 ""Monogamous""",
-" tradition_polygamous_name:0 ""Polygamous""",
-" tradition_concubines_name:1 ""Concubines""",
-" tradition_mendicant_mystics_name:0 ""Mendicant Mystics""",
-" tradition_parochialism_name:0 ""Parochialism""",
-" tradition_martial_admiration_name:0 ""Martial Admiration""",
-" tradition_chanson_de_geste_name:0 ""Chanson de Geste""",
-" tradition_ruling_caste_name:0 ""Ruling Caste""",
-" tradition_staunch_traditionalists_name:0 ""Staunch Traditionalists""",
-" tradition_sacred_groves_name:0 ""Sacred Groves""",
-" tradition_hold_the_line_name:0 ""Hold the Line""",
-" tradition_legendary_noble_families_name:0 ""Legendary Noble Families""",
-" tradition_castle_keepers_name:0 ""Castle Keepers""",
-" tradition_city_keepers_name:0 ""City Keepers""",
-" tradition_fractious_name:0 ""Fractious""",
-" tradition_runestones_name:1 ""Runestone Raisers""",
-" tradition_insular_spirit_name:0 ""Insular Spirit""",
-" tradition_monastic_communities_name:0 ""Monastic Communities""",
-" tradition_roman_legacy_name:1 ""Eastern Roman Legacy""",
-" tradition_longbow_competitions_name:0 ""Longbow Competitions""",
-" tradition_illyrian_grit_name:0 ""Illyrian Grit""",
-" tradition_maritime_mercantilism_name:0 ""Maritime Mercantilism""",
-" tradition_sacral_kingship_name:0 ""Sacral Kingship""",
-" tradition_reavers_name:0 ""Reavers""",
-" tradition_practiced_pirates_name:0 ""Practiced Pirates""",
-" tradition_determined_independence_name:0 ""Determined Independence""",
-" tradition_merciful_blindings_name:0 ""Merciful Blindings""",
-" tradition_reindeer_hunters_name:0 ""Reindeer Hunters""",
-" tradition_mountaineer_ruralism_name:0 ""Mountaineer Ruralism""",
-" tradition_life_is_just_a_joke_name:0 ""Life is just a Joke""",
-" tradition_steppe_tolerance_name:0 ""Steppe Tolerance""",
-" tradition_nubian_warrior_queens_name:0 ""Warrior Queens""",
-" tradition_maritime_mangroves_name:0 ""Maritime Mangroves""",
-" tradition_mixed_governance_name:0 ""Mixed Governance""",
-" tradition_ritual_scarrification_name:0 ""Ritual Scarification""",
-" tradition_hidden_cities_name:0 ""Hidden Cities""",
-" tradition_hereditary_bards_name:0 ""Hereditary Bards""",
-" tradition_ancient_miners_name:0 ""Ancient Miners""",
-" tradition_wetlanders_name:0 ""Wetlanders""",
-" tradition_diasporic_name:0 ""Diasporic""",
-" tradition_sorcerous_metallurgy_name:0 ""Sorcerous Metallurgy""",
-" tradition_polders_name:0 ""Polders""",
-" tradition_caucasian_wolves_name:0 ""Caucasian Wolves""",
-" tradition_artisans_name:0 ""Expert Artisans""",
-" tradition_fp1_coastal_warriors_name:0 ""Coastal Warriors""",
-" tradition_fp1_performative_honour_name:0 ""Performative Honor""",
-" tradition_fp1_northern_stories_name:0 ""Northern Stories""",
-" tradition_fp1_trials_by_combat_name:0 ""Trials-by-Combat""",
-" tradition_fp1_the_right_to_prove_name:0 ""The Right to Prove""",
-" tradition_strong_kinship_name:0 ""Strong Kinship""",
-" tradition_amharic_highlanders_name:0 ""Amharic Highlanders"""})
+    Sub GameDirPrompt()
+        Dim DirFound As Boolean = False
+        Do
+            Console.WriteLine("Please enter your Crusader Kings 3 installation's root directory.")
+            GameDir = Console.ReadLine
+            GameDir = Path.TrimEndingDirectorySeparator(GameDir)
+            If Directory.GetDirectories(GameDir, SearchOption.TopDirectoryOnly).ToList.Exists(Function(x) x.Contains("binaries")) Then
+                GameDir &= Path.DirectorySeparatorChar & "binaries" & Path.DirectorySeparatorChar
+            End If
+            If Directory.GetFiles(GameDir, SearchOption.AllDirectories).ToList.Contains(GameDir & "ck3.exe") Then
+                DirFound = True
+            End If
+        Loop While DirFound = False
+
+        Using SW As New StreamWriter(Path.GetTempPath() & Path.DirectorySeparatorChar & "CK3Tools.txt", False)
+            SW.WriteLine(GameDir)
+        End Using
+    End Sub
+    Function DeComment(Input As String) As String
+        Dim Output As List(Of String) = Input.Split(Chr(34)).ToList 'Find the boundaries of the actual loc code by splitting it up according to its quotation marks.
+        Output(Output.Count - 1) = Output(Output.Count - 1).Split("#"c).First 'Take the last part of the split input, and split it off from the comment.
+        Return String.Join(Chr(34), Output).TrimEnd 'Rejoin the input with quotation marks and return it.
     End Function
     Function DeConcept(Input As String) As String
-        Dim Output As String = Input
-        Do
-            Dim GameConcept As String = Split(Split(Output, "[", 2)(1), "|", 2)(0)
-            Dim Finder As String
-            If GameConceptLocalisations.ContainsKey(GameConcept.ToLower) Then
-                Finder = GameConceptLocalisations(GameConcept.ToLower)
-            Else
-                Finder = GameConcept
-            End If
-            Output = Output.Replace($"[{GameConcept}|E]", Finder)
-        Loop While Output.Contains("|E]")
-        Return Output
+        If Input.Contains("|E]") Then
+            Dim Output As String = Input
+            Do
+                Dim GameConcept As String = Split(Split(Output, "[", 2)(1), "|", 2)(0)
+                Dim Finder As String
+                If GameConceptLocalisations.ContainsKey(GameConcept.ToLower) Then
+                    Finder = GameConceptLocalisations(GameConcept.ToLower)
+                Else
+                    Finder = GameConcept
+                End If
+                Output = Output.Replace($"[{GameConcept}|E]", Finder)
+            Loop While Output.Contains("|E]")
+            Return Output
+        Else
+            Return Input
+        End If
+    End Function
+    Function DeReference(Input As String) As String
+        If Input.Contains("$"c) Then
+            Dim Output As String = Input
+            Dim Locs As New List(Of String)
+            Do
+                If Not Locs.Contains(Input.Split("$", 3)(1)) Then
+                    Locs.Add(Input.Split("$", 3)(1))
+                End If
+                Input = Input.Split("$", 3).Last
+            Loop While Input.Contains("$"c)
+            Dim Code As List(Of String) = Locs.ToList
+            GetLocalisation(Locs)
+            For Count = 0 To Code.Count - 1
+                Output = Output.Replace($"${Code(Count)}$", Locs(Count))
+            Next
+            Return Output
+        Else
+            Return Input
+        End If
     End Function
     Function DeFormat(Input As String) As String
-        Dim Output As List(Of String) = Input.Split("#"c, StringSplitOptions.RemoveEmptyEntries).ToList
-        For Count = 0 To Output.Count - 1
-            Dim Formatted() As String = Output(Count).Split({" "c, vbTab}, 2, StringSplitOptions.None)
-            Output(Count) = Output(Count).Split({" "c, vbTab}, 2, StringSplitOptions.None)(1)
-        Next
-        Return String.Concat(Output).Trim
+        If Input.Contains("#"c) Then
+            Dim Output As String = Input
+            Do
+                Dim FormattedLoc As String = Output.Split("#"c, 2).Last.Split("#!", 2).First 'Find the styled part of the loc and extract it.
+                Dim DeFormatted As String = FormattedLoc.Split(" "c, 2).Last 'Remove the style code and store it in a string.
+                Output = Output.Replace($"#{FormattedLoc}#!", DeFormatted) 'Use replace function to replace the formatted part of the loc with the deformatted string.
+            Loop While Output.Contains("#"c) 'Loop if there are more.
+            Return Output 'Return when there are no more.
+        Else
+            Return Input
+        End If
     End Function
 End Module
