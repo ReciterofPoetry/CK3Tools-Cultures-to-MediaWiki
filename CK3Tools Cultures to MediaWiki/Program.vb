@@ -264,8 +264,13 @@ Module Program
         Dim EndTime As DateTime = DateTime.Now
         Debug.Print(EndTime.Subtract(StartTime).TotalSeconds.ToString)
 
-        Dim OutputFile As String = File.ReadAllLines(BaseDir & "/descriptor.mod").ToList.Find(Function(x) x.StartsWith("name=")).Split(Chr(34), 3)(1)
-        OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\{String.Concat(OutputFile.Split(Path.GetInvalidFileNameChars))} Cultures.txt"
+        Dim OutputFile As String
+        If File.Exists(BaseDir & "/descriptor.mod") Then
+            OutputFile = File.ReadAllLines(BaseDir & "/descriptor.mod").ToList.Find(Function(x) x.StartsWith("name=")).Split(Chr(34), 3)(1)
+            OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\{String.Concat(OutputFile.Split(Path.GetInvalidFileNameChars))} Cultures.txt"
+        Else
+            OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\CK3Tools Cultures to MediaWiki.txt"
+        End If
         Using SW As New StreamWriter(OutputFile)
             SW.WriteLine("{| class=""wikitable sortable""")
             If CultureDescriptions.Count = 0 Then
