@@ -1,8 +1,9 @@
 Imports System.IO
 
 Friend Module Props
-    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
-    Property BaseDir As String = Environment.CurrentDirectory
+    Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
+    'Property BaseDir As String = "D:\Programs\Steam\steamapps\common\Crusader Kings III\game"
+    'Property BaseDir As String = Environment.CurrentDirectory
     Property GameDir As String
 End Module
 Module Program
@@ -58,7 +59,7 @@ Module Program
                         Blocks(RawObject) = Block
                     End If
                 End If
-                    Text = Text.Split(Block, 2).Last.Split("}", 2).Last
+                Text = Text.Split(Block, 2).Last.Split("}", 2).Last
             Loop While Text.Split("}"c, 2).First.Contains("{"c)
             For Each Block In Blocks.Keys
                 If Blocks(Block).Contains("type") AndAlso Blocks(Block).Split("type", 2)(1).Split(vbCrLf, 2)(0).Contains("heritage") Then
@@ -127,7 +128,7 @@ Module Program
             End If
 
             If Block.Contains("color") Then
-                Dim Colour As String = Block.Split("color", 2).Last.Split("="c, 2).Last.Split({vbCrLf, vbCr, vbLf}, StringSplitOptions.None).First.Split("{"c, 2).Last.Split("}"c).First.Trim
+                Dim Colour As String = Block.Split("color", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
                 If Not Colour.Replace(" "c, "").Replace("."c, "").All(AddressOf Char.IsDigit) Then
                     If NamedColours.ContainsKey(Colour) Then
                         Colour = NamedColours(Colour)
@@ -156,7 +157,7 @@ Module Program
                 Colours.Add("255 255 255")
             End If
 
-            Dim Ethos As String = Block.Split("ethos", 2)(1).Split("="c, 2)(1).Split(vbCrLf, 2)(0).Trim
+            Dim Ethos As String = Block.Split("ethos", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
             Ethoses.Add(Ethos.Trim(vbTab))
 
 
@@ -178,14 +179,14 @@ Module Program
             Dim Tradition As String = String.Join(" "c, DeComment)
             Traditions.Add(Tradition.Trim(vbTab))
 
-            Dim Language As String = Block.Split("language", 2)(1).Split("="c, 2)(1).Split(vbCrLf, 2)(0).Trim
+            Dim Language As String = Block.Split("language", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
             Languages.Add(Language.Trim(vbTab))
 
-            Dim MartialCustom As String = Block.Split("martial_custom", 2)(1).Split("="c, 2)(1).Split(vbCrLf, 2)(0).Trim
+            Dim MartialCustom As String = Block.Split("martial_custom", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
             MartialCustoms.Add(MartialCustom.Trim(vbTab))
         Next
 
-        If File.ReadAllText(BaseDir & "/descriptor.mod").Contains($"name={Chr(34)}Godherja: The Dying World{Chr(34)}") Then
+        If File.Exists(BaseDir & "/descriptor.mod") AndAlso File.ReadAllText(BaseDir & "/descriptor.mod").Contains($"name={Chr(34)}Godherja: The Dying World{Chr(34)}") Then
             Dim Lines As List(Of String) = File.ReadAllLines($"{BaseDir}\common\scripted_guis\gh_culture_desc.txt").ToList
             For Each Culture In Cultures
                 Dim CultureDescription As String = ""
@@ -199,6 +200,57 @@ Module Program
 
         Dim StartTime As DateTime = DateTime.Now
 
+        CollectLocalisations()
+
+        GetLocalisation(Heritages, "_name")
+        GetLocalisation(Cultures)
+        GetLocalisation(Ethoses, "_name")
+        For Count = 0 To Traditions.Count - 1
+            Dim Code As List(Of String) = Traditions(Count).Split(" "c).ToList
+            GetLocalisation(Code, "_name")
+            Traditions(Count) = $"* {String.Join(vbCrLf & "* ", Code)}"
+        Next
+        GetLocalisation(Languages, "_name")
+        GetLocalisation(MartialCustoms, "_name")
+        GetLocalisation(CultureDescriptions)
+
+        Dim EndTime As DateTime = DateTime.Now
+        Debug.Print(EndTime.Subtract(StartTime).TotalSeconds.ToString)
+
+        Dim OutputFile As String
+        If File.Exists(BaseDir & "/descriptor.mod") Then
+            OutputFile = File.ReadAllLines(BaseDir & "/descriptor.mod").ToList.Find(Function(x) x.StartsWith("name=")).Split(Chr(34), 3)(1)
+            OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\{String.Concat(OutputFile.Split(Path.GetInvalidFileNameChars))} Cultures.txt"
+        Else
+            OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\CK3Tools Cultures to MediaWiki.txt"
+        End If
+        Using SW As New StreamWriter(OutputFile)
+            SW.WriteLine("{| class=""wikitable sortable""")
+            If CultureDescriptions.Count = 0 Then
+                SW.WriteLine("! Heritage !! Culture !! Ethos !! Traditions !! Language !! Martial Custom")
+            Else
+                SW.WriteLine("! Heritage !! Culture !! Ethos !! Traditions !! Language !! Martial Custom !! Description")
+            End If
+            For Each Heritage In HeritageCultures.Keys
+                Dim CultureList As List(Of String) = HeritageCultures(Heritage).Split().ToList
+                SW.WriteLine($"|-{vbCrLf}| rowspan=""{CultureList.Count}"" | '''{Heritages(Heritage)}'''")
+                For Count = 0 To CultureList.Count - 1
+                    Dim Culture As Integer = CultureList(Count)
+                    If CultureDescriptions.Count = 0 Then
+                        CultureList(Count) = $"!style=""background:rgb({String.Join(", ", Colours(Culture).Split)})""| {Cultures(Culture)}{vbCrLf}| {Ethoses(Culture)}{vbCrLf}| {vbCrLf}{Traditions(Culture)}{vbCrLf}| {Languages(Culture)}{vbCrLf}| {MartialCustoms(Culture)}"
+                    Else
+                        CultureList(Count) = $"!style=""background:rgb({String.Join(", ", Colours(Culture).Split)})""| {Cultures(Culture)}{vbCrLf}| {Ethoses(Culture)}{vbCrLf}| {vbCrLf}{Traditions(Culture)}{vbCrLf}| {Languages(Culture)}{vbCrLf}| {MartialCustoms(Culture)}{vbCrLf}| {String.Join(vbCrLf, CultureDescriptions(Culture).Replace("/n", vbCrLf).Replace("\n", vbCrLf).Replace("\", "").Split(vbCrLf, StringSplitOptions.TrimEntries))}"
+                    End If
+                Next
+                SW.WriteLine(String.Join($"{vbCrLf}|-{vbCrLf}", CultureList))
+            Next
+            SW.WriteLine("|}")
+        End Using
+
+        Console.WriteLine("Successfully deposited output to desktop. Press any key to close.")
+        Console.ReadKey()
+    End Sub
+    Sub CollectLocalisations()
         Dim BaseFiles As List(Of String) = Directory.GetFiles(GameDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
         For Each TextFile In BaseFiles
             SaveLocs(TextFile)
@@ -248,49 +300,6 @@ Module Program
                 GameConceptLocalisations(Key) = DeReference(GameConceptLocalisations.Values(Count))
             End If
         Next
-
-        GetLocalisation(Heritages, "_name")
-        GetLocalisation(Cultures)
-        GetLocalisation(Ethoses, "_name")
-        For Count = 0 To Traditions.Count - 1
-            Dim Code As List(Of String) = Traditions(Count).Split(" "c).ToList
-            GetLocalisation(Code, "_name")
-            Traditions(Count) = $"* {String.Join(vbCrLf & "* ", Code)}"
-        Next
-        GetLocalisation(Languages, "_name")
-        GetLocalisation(MartialCustoms, "_name")
-        GetLocalisation(CultureDescriptions)
-
-        Dim EndTime As DateTime = DateTime.Now
-        Debug.Print(EndTime.Subtract(StartTime).TotalSeconds.ToString)
-
-        Dim OutputFile As String = File.ReadAllLines(BaseDir & "/descriptor.mod").ToList.Find(Function(x) x.StartsWith("name=")).Split(Chr(34), 3)(1)
-        OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\{String.Concat(OutputFile.Split(Path.GetInvalidFileNameChars))} Cultures.txt"
-        Using SW As New StreamWriter(OutputFile)
-            SW.WriteLine("{| class=""wikitable sortable""")
-            If CultureDescriptions.Count = 0 Then
-                SW.WriteLine("! Heritage !! Culture !! Ethos !! Traditions !! Language !! Martial Custom")
-            Else
-                SW.WriteLine("! Heritage !! Culture !! Ethos !! Traditions !! Language !! Martial Custom !! Description")
-            End If
-            For Each Heritage In HeritageCultures.Keys
-                Dim CultureList As List(Of String) = HeritageCultures(Heritage).Split().ToList
-                SW.WriteLine($"|-{vbCrLf}| rowspan=""{CultureList.Count}"" | '''{Heritages(Heritage)}'''")
-                For Count = 0 To CultureList.Count - 1
-                    Dim Culture As Integer = CultureList(Count)
-                    If CultureDescriptions.Count = 0 Then
-                        CultureList(Count) = $"!style=""background:rgb({String.Join(", ", Colours(Culture).Split)})""| {Cultures(Culture)}{vbCrLf}| {Ethoses(Culture)}{vbCrLf}| {vbCrLf}{Traditions(Culture)}{vbCrLf}| {Languages(Culture)}{vbCrLf}| {MartialCustoms(Culture)}"
-                    Else
-                        CultureList(Count) = $"!style=""background:rgb({String.Join(", ", Colours(Culture).Split)})""| {Cultures(Culture)}{vbCrLf}| {Ethoses(Culture)}{vbCrLf}| {vbCrLf}{Traditions(Culture)}{vbCrLf}| {Languages(Culture)}{vbCrLf}| {MartialCustoms(Culture)}{vbCrLf}| {String.Join(vbCrLf, CultureDescriptions(Culture).Replace("/n", vbCrLf).Replace("\n", vbCrLf).Replace("\", "").Split(vbCrLf, StringSplitOptions.TrimEntries))}"
-                    End If
-                Next
-                SW.WriteLine(String.Join($"{vbCrLf}|-{vbCrLf}", CultureList))
-            Next
-            SW.WriteLine("|}")
-        End Using
-
-        Console.WriteLine("Successfully deposited output to desktop. Press any key to close.")
-        Console.ReadKey()
     End Sub
     Private Sub GetLocalisation(ByRef Code As List(Of String), Optional Suffix As String = "")
         For Count = 0 To Code.Count - 1
@@ -302,17 +311,17 @@ Module Program
                     'Process the loc for internal code.
 
                     If Code(Count).Split(Chr(34)).Last.Contains("#") Then
-                        Code(Count) = DeComment(Code(Count))
+                        Code(Count) = DeComment(Code(Count)) 'Remove comments if any.
                     End If
                     Code(Count) = Code(Count).Split(Chr(34), 2).Last.TrimEnd.TrimEnd(Chr(34))
                     If Code(Count).Contains("#"c) Then
-                        Code(Count) = DeFormat(Code(Count))
+                        Code(Count) = DeFormat(Code(Count)) 'Remove style formatting if any.
                     End If
-                    If Code(Count).Contains("|E]") Then
-                        Code(Count) = DeConcept(Code(Count))
+                    If Code(Count).Contains("|E]") OrElse Code(Count).Contains("|e]") Then
+                        Code(Count) = DeConcept(Code(Count)) 'Find the appropriate locs for any game concepts referred.
                     End If
                     If Code(Count).Contains("$") Then
-                        Code(Count) = DeReference(Code(Count))
+                        Code(Count) = DeReference(Code(Count)) 'Find the appropriate locs for any other locs referred.
                     End If
                 ElseIf GameConceptLocalisations.Contains(RawCode) Then 'If game concept locs stored to dictionary contain this loc then...
                     Code(Count) = GameConceptLocalisations(RawCode) 'Get the loc from the game concept dictionary.
@@ -374,11 +383,10 @@ Module Program
         Return String.Join(Chr(34), Output).TrimEnd 'Rejoin the input with quotation marks and return it.
     End Function
     Function DeConcept(Input As String) As String
-        If Input.Contains("|E]") Then
-            Dim Output As String = Input 'Save the original string for find and replace operations later.
+        If Input.Contains("|E]") OrElse Input.Contains("|e]") Then
             Dim GameConcepts As New SortedList(Of String, String) 'Collect each game concept contained in string here.
             Do
-                Dim GameConcept As String = Output.Split("["c, 2).Last.Split("|"c, 2).First 'Get the game concept object id.
+                Dim GameConcept As String = Input.Split("["c, 2).Last.Split("|"c, 2).First 'Get the game concept object id.
                 If Not GameConcepts.ContainsKey(GameConcept) Then 'If it has not already been collected then...
                     Dim ReplaceString As String
                     If GameConceptLocalisations.Contains(GameConcept.ToLower) Then 'Find its loc in the SortedList.
@@ -387,18 +395,18 @@ Module Program
                         ReplaceString = GameConcept 'If it cannot be found then assign the replace string to be the raw code.
                     End If
                     GameConcepts.Add(GameConcept, ReplaceString) 'Add it to the sortedlist and find the rest of the game concepts in this loc string.
-                    Input = Input.Replace($"[{GameConcept}|E]", ReplaceString) 'Remove it from the input string so it is not reparsed into the SortedList.
+                    Input = Input.Replace($"[{GameConcept}|E]", ReplaceString).Replace($"[{GameConcept}|e]", ReplaceString) 'Remove it from the input string so it is not reparsed into the SortedList.
                 Else 'If it has already been collected...
-                    Input = String.Concat(Input.Split({"[", "|E]"}, 3, StringSplitOptions.None)) 'Remove it from the input string.
+                    'Input = String.Concat(Input.Split({"[", "|E]"}, 3, StringSplitOptions.None)) 'Remove it from the input string.
+                    Input = Input.Replace($"[{GameConcept}|E]", GameConcepts(GameConcept)).Replace($"[{GameConcept}|e]", GameConcepts(GameConcept))
                 End If
-            Loop While Input.Contains("|E]") 'Loop while input loc string contains any non-parsed game concepts.
-            For Each GameConcept In GameConcepts.Keys
-                Output = Output.Replace($"[{GameConcept}|E]", GameConcepts(GameConcept)) 'Now do a find and replace in the output string for each game concept found.
-            Next
-            Return Output 'Return loc.
+            Loop While Input.Contains("|E]") OrElse Input.Contains("|e]") 'Loop while input loc string contains any non-parsed game concepts.
+
+            Return Input 'Return loc.
         Else
             Return Input 'Redundancy in case a loc was falsely found to contain a game concept.
         End If
+
     End Function
     Function DeReference(Input As String) As String
         If Input.Contains("$"c) Then
