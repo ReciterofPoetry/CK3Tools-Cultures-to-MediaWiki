@@ -136,9 +136,9 @@ Module Program
                 Heritage = Block.Split("heritage", 2)(1).Split("="c, 2).Last.TrimStart.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.Trim
             Else
                 Debug.Print("No heritage found for: " & Culture)
-                Heritage = "No Heritage"
-                If Not Heritages.Contains("No Heritage") Then
-                    Heritages.Add("No Heritage")
+                Heritage = "None"
+                If Not Heritages.Contains("None") Then
+                    Heritages.Add("None")
                 End If
             End If
             Dim HeritageIndex As Integer = Heritages.FindIndex(Function(x) x.Equals(Heritage))
@@ -290,7 +290,7 @@ Module Program
         End Using
 
         Console.WriteLine("Successfully deposited output to desktop. Press any key to close.")
-        Console.ReadKey()
+        Console.ReadKey(True)
     End Sub
     Sub CollectLocalisations()
         Dim RawGameConceptLocalisations As New Dictionary(Of String, String)
