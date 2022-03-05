@@ -1,16 +1,15 @@
 Imports System.IO
 
 Friend Module Props
-    Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
+    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
     'Property BaseDir As String = "D:\Programs\Steam\steamapps\common\Crusader Kings III\game"
-    'Property BaseDir As String = Environment.CurrentDirectory
+    Property BaseDir As String = Environment.CurrentDirectory
     Property GameDir As String
 End Module
 Module Program
 #Disable Warning IDE0044 ' Add readonly modifier
     Dim GameConceptLocalisations As New Hashtable()
     Dim RawLocalisation As New List(Of String)
-    'Dim SavedLocalisation As New Dictionary(Of String, String)
     Dim SavedLocalisation As New Hashtable()
     Dim LocalisationFiles As List(Of String)
 #Enable Warning IDE0044 ' Add readonly modifier
@@ -18,13 +17,16 @@ Module Program
 
         SetGameDir()
 
-        Dim FileList As List(Of String) = Directory.GetFiles(BaseDir & "\common\culture\pillars", "*.txt", SearchOption.AllDirectories).ToList
-        With FileList
-            .Reverse()
-            Dim BaseFileList As List(Of String) = Directory.GetFiles(GameDir & "\common\culture\pillars", "*.txt", SearchOption.AllDirectories).ToList
-            BaseFileList.Reverse()
-            FileList = .Concat(BaseFileList).ToList
-        End With
+        Dim FileList As New List(Of String)
+        'Get heritages in code.
+        If Directory.Exists(BaseDir & "\common\culture\pillars") AndAlso Not Directory.GetFiles(BaseDir & "\common\culture\pillars").Length = 0 Then
+                FileList = Directory.GetFiles(BaseDir & "\common\culture\pillars", "*.txt", SearchOption.AllDirectories).ToList
+            End If
+        FileList.Reverse() 'Reverse due to load order demanding that the last occurrence of an object be the relevant one in code.
+        Dim BaseFileList As List(Of String) = Directory.GetFiles(GameDir & "\common\culture\pillars", "*.txt", SearchOption.AllDirectories).ToList
+        BaseFileList.Reverse()
+        FileList = FileList.Concat(BaseFileList).ToList
+
 
         Dim HeritageFiles As New List(Of String)
         For Each TextFile In FileList
@@ -71,23 +73,22 @@ Module Program
         Heritages.Sort()
 
         Dim NamedColours As New SortedList(Of String, String)
-        Dim NamedColourFiles As New List(Of String)
-        With NamedColourFiles
-            If Directory.Exists(BaseDir & "common\named_colors") Then
-                NamedColourFiles = .Concat(Directory.GetFiles(BaseDir & "common\named_colors")).ToList
-                .Reverse()
-            End If
-            Dim BaseNamedColourFiles As List(Of String) = Directory.GetFiles(GameDir & "common\named_colors").ToList
-            .Reverse()
-            NamedColourFiles = .Concat(BaseNamedColourFiles).ToList
-        End With
+        Dim NamedColourFiles As List(Of String) = Directory.GetFiles(GameDir & "\common\named_colors").ToList
+        If Directory.Exists(BaseDir & "\common\named_colors") Then
+            NamedColourFiles = NamedColourFiles.Concat(Directory.GetFiles(BaseDir & "\common\named_colors")).ToList
+        End If
+
         For Each ColourFile In NamedColourFiles
             Dim Text As String = File.ReadAllText(ColourFile).Split("colors", 2).Last.Split("{"c, 2).Last.TrimEnd.TrimEnd("}"c)
             Do
                 Dim Name As String = Text.Split("="c, 2).First.TrimEnd.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, StringSplitOptions.None).Last
                 Dim Colour As String = Text.Split("{"c, 2).Last.Split("}"c, 2).First.Trim
                 If Not Text.Split(Name, 2).Last.Split("}"c, 2).First.Contains("hsv") Then
-                    NamedColours.Add(Name, Colour)
+                    If Not NamedColours.ContainsKey(Name) Then
+                        NamedColours.Add(Name, Colour)
+                    Else
+                        NamedColours(Name) = Colour
+                    End If
                 End If
                 Text = Text.Split(Colour, 2).Last.Split("}"c, 2).Last
             Loop While Text.Contains("="c)
@@ -96,35 +97,56 @@ Module Program
         Dim CultureFiles As List(Of String) = Directory.GetFiles(BaseDir & "\common\culture\cultures", "*.txt", SearchOption.AllDirectories).ToList
         Dim RawCultures As New List(Of String)
         For Each TextFile In CultureFiles
-            Dim Text As List(Of String) = File.ReadAllText(TextFile).Split(vbCrLf & "}", StringSplitOptions.RemoveEmptyEntries).ToList
-            For TextCount = 0 To Text.Count - 1
-                If Text(TextCount).Contains("#"c) Then
-                    Dim Hold As List(Of String) = Text(TextCount).Split(vbCrLf).ToList
+            Dim Blocks As New List(Of String)
+            Dim RawText As String = File.ReadAllText(TextFile)
+            Blocks = DeNest(RawText)
+
+            For TextCount = 0 To Blocks.Count - 1
+                If Blocks(TextCount).Contains("#"c) Then
+                    Dim Hold As List(Of String) = Blocks(TextCount).Split(vbCrLf).ToList
                     Hold.RemoveAll(Function(x) x.TrimStart.StartsWith("#"c))
-                    Text(TextCount) = String.Join(vbCrLf, Hold)
+                    Blocks(TextCount) = String.Join(vbCrLf, Hold)
                 End If
             Next
-            Text.RemoveAll(Function(x) Not x.Contains("}"c))
-            RawCultures = RawCultures.Concat(Text).ToList
+            Blocks.RemoveAll(Function(x) Not x.Contains("}"c))
+            RawCultures = RawCultures.Concat(Blocks).ToList
         Next
 
         Dim Cultures, Colours, Ethoses, Traditions, Languages, MartialCustoms, CultureDescriptions As New List(Of String)
         Dim HeritageCultures As New SortedList(Of Integer, String)
 
         For Each Block In RawCultures
+            Dim DeComment As List(Of String) = Block.Split({vbCrLf, vbCr, vbLf}, StringSplitOptions.None).ToList
+            DeComment.RemoveAll(Function(x) x.TrimStart.StartsWith("#"c))
+            For Count = 0 To DeComment.Count - 1
+                If DeComment(Count).Contains("#"c) Then
+                    DeComment(Count) = DeComment(Count).Split("#"c, 2).First.TrimEnd
+                End If
+            Next
+            Block = String.Join(vbCrLf, DeComment)
+
             Dim Culture As String = Block.Split({" ", "=", "{"}, StringSplitOptions.RemoveEmptyEntries)(0).Trim
             If Culture.Contains(vbCrLf) Then
                 Culture = Culture.Split(vbCrLf).Last
             End If
             Cultures.Add(Culture.Trim(vbTab))
 
-            Dim Heritage As String = Block.Split("heritage", 2)(1).Split("="c, 2).Last.TrimStart.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.Trim
-            Dim Count As Integer = Heritages.FindIndex(Function(x) x.Equals(Heritage))
-
-            If Not HeritageCultures.ContainsKey(Count) Then
-                HeritageCultures.Add(Count, Cultures.Count - 1)
+            Dim Heritage As String = ""
+            If Block.Contains("heritage") Then
+                Heritage = Block.Split("heritage", 2)(1).Split("="c, 2).Last.TrimStart.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.Trim
             Else
-                HeritageCultures(Count) &= $" {Cultures.Count - 1}"
+                Debug.Print("No heritage found for: " & Culture)
+                Heritage = "No Heritage"
+                If Not Heritages.Contains("No Heritage") Then
+                    Heritages.Add("No Heritage")
+                End If
+            End If
+            Dim HeritageIndex As Integer = Heritages.FindIndex(Function(x) x.Equals(Heritage))
+
+            If Not HeritageCultures.ContainsKey(HeritageIndex) Then
+                HeritageCultures.Add(HeritageIndex, Cultures.Count - 1)
+            Else
+                HeritageCultures(HeritageIndex) &= $" {Cultures.Count - 1}"
             End If
 
             If Block.Contains("color") Then
@@ -138,14 +160,14 @@ Module Program
                 End If
                 If Colour.Contains("."c) Then
                     Dim Hold() As String = Colour.Split
-                    For Count = 0 To Hold.Length - 1
-                        If Hold(Count).Contains("."c) Then
-                            Hold(Count) *= 256
-                            If Hold(Count).Contains("."c) Then
-                                Hold(Count) = Hold(Count).Split("."c)(0)
+                    For HeritageIndex = 0 To Hold.Length - 1
+                        If Hold(HeritageIndex).Contains("."c) Then
+                            Hold(HeritageIndex) *= 256
+                            If Hold(HeritageIndex).Contains("."c) Then
+                                Hold(HeritageIndex) = Hold(HeritageIndex).Split("."c)(0)
                             End If
-                            If Hold(Count) = 256 Then
-                                Hold(Count) -= 1
+                            If Hold(HeritageIndex) = 256 Then
+                                Hold(HeritageIndex) -= 1
                             End If
                         End If
                     Next
@@ -157,33 +179,52 @@ Module Program
                 Colours.Add("255 255 255")
             End If
 
-            Dim Ethos As String = Block.Split("ethos", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
-            Ethoses.Add(Ethos.Trim(vbTab))
+            If Block.Contains("ethos") Then
+                Dim Ethos As String = Block.Split("ethos", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
+                Ethoses.Add(Ethos.Trim(vbTab))
+            Else
+                Debug.Print("No ethos found for: " & Culture)
+                Ethoses.Add("")
+            End If
 
+            If Block.Contains("traditions") Then
+                DeComment = Block.Split("traditions", 2).Last.Split({"{"c, "}"c}, 3)(1).Split({vbCrLf, vbTab}, StringSplitOptions.RemoveEmptyEntries).ToList
+                For HeritageIndex = 0 To DeComment.Count - 1
+                    If DeComment(HeritageIndex).TrimStart.StartsWith("#") Then
+                        DeComment(HeritageIndex) = ""
+                    ElseIf DeComment(HeritageIndex).Contains("#") Then
+                        Do
+                            If DeComment(HeritageIndex).Split("#").Contains(vbCrLf) Then
+                                DeComment(HeritageIndex) = String.Concat({DeComment(HeritageIndex).Split("#"c, 2)(0), DeComment(HeritageIndex).Split("#"c, 2)(1).Split(vbCrLf, 2)(1)})
+                            Else
+                                DeComment(HeritageIndex) = DeComment(HeritageIndex).Split("#"c, 2)(0)
+                            End If
+                        Loop While DeComment(HeritageIndex).Contains("#")
+                    End If
+                Next
+                DeComment.RemoveAll(Function(x) x.Trim.Length = 0)
+                Dim Tradition As String = String.Join(" "c, DeComment)
+                Traditions.Add(Tradition.Trim(vbTab))
+            Else
+                Debug.Print("No traditions found for: " & Culture)
+                Traditions.Add("")
+            End If
 
-            Dim DeComment As List(Of String) = Block.Split("traditions")(1).Split({"{"c, "}"c}, 3)(1).Split({vbCrLf, vbTab}, StringSplitOptions.RemoveEmptyEntries).ToList
-            For Count = 0 To DeComment.Count - 1
-                If DeComment(Count).TrimStart.StartsWith("#") Then
-                    DeComment(Count) = ""
-                ElseIf DeComment(Count).Contains("#") Then
-                    Do
-                        If DeComment(Count).Split("#").Contains(vbCrLf) Then
-                            DeComment(Count) = String.Concat({DeComment(Count).Split("#"c, 2)(0), DeComment(Count).Split("#"c, 2)(1).Split(vbCrLf, 2)(1)})
-                        Else
-                            DeComment(Count) = DeComment(Count).Split("#"c, 2)(0)
-                        End If
-                    Loop While DeComment(Count).Contains("#")
-                End If
-            Next
-            DeComment.RemoveAll(Function(x) x.Trim.Equals(""))
-            Dim Tradition As String = String.Join(" "c, DeComment)
-            Traditions.Add(Tradition.Trim(vbTab))
+            If Block.Contains("language") Then
+                Dim Language As String = Block.Split("language", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
+                Languages.Add(Language.Trim(vbTab))
+            Else
+                Debug.Print("No language found for: " & Culture)
+                Languages.Add("")
+            End If
 
-            Dim Language As String = Block.Split("language", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
-            Languages.Add(Language.Trim(vbTab))
-
-            Dim MartialCustom As String = Block.Split("martial_custom", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
-            MartialCustoms.Add(MartialCustom.Trim(vbTab))
+            If Block.Contains("martial_custom") Then
+                Dim MartialCustom As String = Block.Split("martial_custom", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
+                MartialCustoms.Add(MartialCustom.Trim(vbTab))
+            Else
+                Debug.Print("No martial custom found for: " & Culture)
+                MartialCustoms.Add("")
+            End If
         Next
 
         If File.Exists(BaseDir & "/descriptor.mod") AndAlso File.ReadAllText(BaseDir & "/descriptor.mod").Contains($"name={Chr(34)}Godherja: The Dying World{Chr(34)}") Then
@@ -215,15 +256,16 @@ Module Program
         GetLocalisation(CultureDescriptions)
 
         Dim EndTime As DateTime = DateTime.Now
-        Debug.Print(EndTime.Subtract(StartTime).TotalSeconds.ToString)
+        Debug.Print(EndTime.Subtract(StartTime).TotalSeconds.ToString) 'This is to measure how long it took to collect and parse the localisations.
 
-        Dim OutputFile As String
+        Dim OutputFile As String 'Name the output text file. Use the name of the mod if possible.
         If File.Exists(BaseDir & "/descriptor.mod") Then
             OutputFile = File.ReadAllLines(BaseDir & "/descriptor.mod").ToList.Find(Function(x) x.StartsWith("name=")).Split(Chr(34), 3)(1)
             OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\{String.Concat(OutputFile.Split(Path.GetInvalidFileNameChars))} Cultures.txt"
         Else
             OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\CK3Tools Cultures to MediaWiki.txt"
         End If
+
         Using SW As New StreamWriter(OutputFile)
             SW.WriteLine("{| class=""wikitable sortable""")
             If CultureDescriptions.Count = 0 Then
@@ -251,9 +293,11 @@ Module Program
         Console.ReadKey()
     End Sub
     Sub CollectLocalisations()
+        Dim RawGameConceptLocalisations As New Dictionary(Of String, String)
+
         Dim BaseFiles As List(Of String) = Directory.GetFiles(GameDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
         For Each TextFile In BaseFiles
-            SaveLocs(TextFile)
+            SaveLocs(TextFile, RawGameConceptLocalisations)
         Next
         If Directory.Exists(BaseDir & "\localization\english") Then
             LocalisationFiles = Directory.GetFiles(BaseDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
@@ -265,33 +309,16 @@ Module Program
         If Directory.Exists(BaseDir & "\localization\replace\english") Then
             LocalisationFiles = LocalisationFiles.Concat(Directory.GetFiles(BaseDir & "\localization\replace\english", "*.yml", SearchOption.AllDirectories)).ToList
         End If
+
         For Each Textfile In LocalisationFiles
-            SaveLocs(Textfile)
+            SaveLocs(Textfile, RawGameConceptLocalisations)
         Next
 
-        Dim RawGameConceptLocalisations As New List(Of String)
-        For Each TextFile In LocalisationFiles
-            Using SR As New StreamReader(TextFile)
-                Dim LineData As String
-                While Not SR.EndOfStream
-                    LineData = SR.ReadLine
-                    If LineData.StartsWith(" stress_icon_tooltip:0") Then
-                        Stop
-                    End If
-                    If LineData Like "*game_concept*" AndAlso Not LineData Like "*$game_concept*" Then
-                        RawGameConceptLocalisations = RawGameConceptLocalisations.Concat(File.ReadAllLines(TextFile)).ToList
-                        Exit While
-                    End If
-                End While
-            End Using
-        Next
-        RawGameConceptLocalisations.RemoveAll(Function(x) Not x.TrimStart.StartsWith("game_concept"))
-
-        For Each Item In RawGameConceptLocalisations
-            If Not GameConceptLocalisations.Contains(Item.Split(":"c).First.Split("game_concept_").Last) Then
-                GameConceptLocalisations.Add(Item.Split(":"c).First.Split("game_concept_").Last, DeFormat(DeComment(Item.Split(Chr(34), 2).Last).TrimEnd.TrimEnd(Chr(34))))
+        For Each Item In RawGameConceptLocalisations.Keys
+            If Not GameConceptLocalisations.Contains(Item) Then
+                GameConceptLocalisations.Add(Item, DeFormat(DeComment(RawGameConceptLocalisations(Item).Split(Chr(34), 2).Last).TrimEnd.TrimEnd(Chr(34))).TrimEnd)
             Else
-                GameConceptLocalisations(Item.Split(":"c).First.Split("game_concept_").Last) = DeFormat(DeComment(Item.Split(Chr(34), 2).Last).TrimEnd.TrimEnd(Chr(34)))
+                GameConceptLocalisations(Item) = DeFormat(DeComment(RawGameConceptLocalisations(Item).Split(Chr(34), 2).Last).TrimEnd.TrimEnd(Chr(34))).TrimEnd
             End If
         Next
         For Count = 0 To GameConceptLocalisations.Count - 1
@@ -358,7 +385,7 @@ Module Program
             SW.WriteLine(GameDir)
         End Using
     End Sub
-    Sub SaveLocs(TextFile As String)
+    Sub SaveLocs(TextFile As String, RawGameConceptLocalisations As Dictionary(Of String, String))
         Using SR As New StreamReader(TextFile)
             Dim LineData As String
             While Not SR.EndOfStream
@@ -374,9 +401,38 @@ Module Program
                         SavedLocalisation(Key) = Value
                     End If
                 End If
+                If LineData.TrimStart.StartsWith("game_concept") Then
+                    Dim Key As String = LineData.TrimStart.Split(":"c, 2).First.Split("game_concept_", 2).Last
+                    Dim Value As String = LineData.Split(":"c, 2).Last.Substring(1).TrimStart
+
+                    If Not RawGameConceptLocalisations.ContainsKey(Key) Then
+                        RawGameConceptLocalisations.Add(Key, Value)
+                    Else
+                        RawGameConceptLocalisations(Key) = Value
+                    End If
+                End If
             End While
         End Using
     End Sub
+    Function DeNest(Input As String) As List(Of String)
+        Dim Output As New List(Of String)
+        If Input.Contains("="c) AndAlso Input.Contains("{"c) Then
+            Do
+                Dim RawCodeID As String = Input.Split("{", 2).First 'Get the code id of the object the block is assigned to.
+                Dim RawCodeBlock As String = Input.Split(RawCodeID, 2)(1).Split("{"c, 2)(1) 'Get the rest of the block after the faith id.
+                RawCodeID = RawCodeID.Split({vbCrLf, vbCr, vbLf}, StringSplitOptions.None).Last
+                Do 'Designate subsidiary objects designated with curly brackets as such by replacing their {} with <>.
+                    RawCodeBlock = String.Join(">", String.Join("<", RawCodeBlock.Split("{"c, 2)).Split("}"c, 2))
+                Loop While RawCodeBlock.Split("}", 2)(0).Contains("{"c) 'Loop until no more subsidiary objects.
+                RawCodeBlock = RawCodeBlock.Split("}"c)(0).Replace("<", "{").Replace(">", "}") & "}" 'Get the data of this object by splitting it off of the overall code after its own { closing bracket.
+                If RawCodeID.Contains("="c) Then
+                    Output.Add(String.Join("{", {RawCodeID, RawCodeBlock})) 'Add to List
+                End If
+                Input = Input.Split(RawCodeBlock, 2).Last 'Remove already parsed data from the rest of the unparsed data.
+            Loop While Input.Split("}", 2)(0).Contains("{"c) 'Continue to parse the data until no more faiths can be found by looking for a { starting bracket.
+        End If
+        Return Output
+    End Function
     Function DeComment(Input As String) As String
         Dim Output As List(Of String) = Input.Split(Chr(34)).ToList 'Find the boundaries of the actual loc code by splitting it up according to its quotation marks.
         Output(Output.Count - 1) = Output(Output.Count - 1).Split("#"c).First 'Take the last part of the split input, and split it off from the comment.
