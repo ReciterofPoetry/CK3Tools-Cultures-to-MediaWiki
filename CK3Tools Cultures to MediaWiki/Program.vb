@@ -1,13 +1,16 @@
 Imports System.IO
+
 Friend Module Props
-    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2216659254"
+    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
     Property BaseDir As String = Environment.CurrentDirectory
     Property GameDir As String
 End Module
 Module Program
 #Disable Warning IDE0044 ' Add readonly modifier
-    Dim GameConceptLocalisations As New SortedList(Of String, String)
+    Dim GameConceptLocalisations As New Hashtable()
     Dim RawLocalisation As New List(Of String)
+    'Dim SavedLocalisation As New Dictionary(Of String, String)
+    Dim SavedLocalisation As New Hashtable()
     Dim LocalisationFiles As List(Of String)
 #Enable Warning IDE0044 ' Add readonly modifier
     Sub Main()
@@ -49,9 +52,13 @@ Module Program
                 End If
                 Block = Block.Split("}"c, 2).First.Replace("<", "{").Replace(">", "}")
                 If Not RawObject.StartsWith("#"c) Then
-                    Blocks.Add(RawObject, Block)
+                    If Not Blocks.ContainsKey(RawObject) Then
+                        Blocks.Add(RawObject, Block)
+                    Else
+                        Blocks(RawObject) = Block
+                    End If
                 End If
-                Text = Text.Split(Block, 2).Last.Split("}", 2).Last
+                    Text = Text.Split(Block, 2).Last.Split("}", 2).Last
             Loop While Text.Split("}"c, 2).First.Contains("{"c)
             For Each Block In Blocks.Keys
                 If Blocks(Block).Contains("type") AndAlso Blocks(Block).Split("type", 2)(1).Split(vbCrLf, 2)(0).Contains("heritage") Then
@@ -190,6 +197,12 @@ Module Program
             Next
         End If
 
+        Dim StartTime As DateTime = DateTime.Now
+
+        Dim BaseFiles As List(Of String) = Directory.GetFiles(GameDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
+        For Each TextFile In BaseFiles
+            SaveLocs(TextFile)
+        Next
         If Directory.Exists(BaseDir & "\localization\english") Then
             LocalisationFiles = Directory.GetFiles(BaseDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
         Else
@@ -200,10 +213,9 @@ Module Program
         If Directory.Exists(BaseDir & "\localization\replace\english") Then
             LocalisationFiles = LocalisationFiles.Concat(Directory.GetFiles(BaseDir & "\localization\replace\english", "*.yml", SearchOption.AllDirectories)).ToList
         End If
-        LocalisationFiles.Reverse()
-        Dim BaseFiles As List(Of String) = Directory.GetFiles(GameDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
-        BaseFiles.Reverse()
-        LocalisationFiles = LocalisationFiles.Concat(BaseFiles).ToList
+        For Each Textfile In LocalisationFiles
+            SaveLocs(Textfile)
+        Next
 
         Dim RawGameConceptLocalisations As New List(Of String)
         For Each TextFile In LocalisationFiles
@@ -224,7 +236,7 @@ Module Program
         RawGameConceptLocalisations.RemoveAll(Function(x) Not x.TrimStart.StartsWith("game_concept"))
 
         For Each Item In RawGameConceptLocalisations
-            If Not GameConceptLocalisations.ContainsKey(Item.Split(":"c).First.Split("game_concept_").Last) Then
+            If Not GameConceptLocalisations.Contains(Item.Split(":"c).First.Split("game_concept_").Last) Then
                 GameConceptLocalisations.Add(Item.Split(":"c).First.Split("game_concept_").Last, DeFormat(DeComment(Item.Split(Chr(34), 2).Last).TrimEnd.TrimEnd(Chr(34))))
             Else
                 GameConceptLocalisations(Item.Split(":"c).First.Split("game_concept_").Last) = DeFormat(DeComment(Item.Split(Chr(34), 2).Last).TrimEnd.TrimEnd(Chr(34)))
@@ -237,8 +249,6 @@ Module Program
             End If
         Next
 
-        ' = VanillaLoc()
-
         GetLocalisation(Heritages, "_name")
         GetLocalisation(Cultures)
         GetLocalisation(Ethoses, "_name")
@@ -250,6 +260,9 @@ Module Program
         GetLocalisation(Languages, "_name")
         GetLocalisation(MartialCustoms, "_name")
         GetLocalisation(CultureDescriptions)
+
+        Dim EndTime As DateTime = DateTime.Now
+        Debug.Print(EndTime.Subtract(StartTime).TotalSeconds.ToString)
 
         Dim OutputFile As String = File.ReadAllLines(BaseDir & "/descriptor.mod").ToList.Find(Function(x) x.StartsWith("name=")).Split(Chr(34), 3)(1)
         OutputFile = $"{Environment.GetFolderPath(Environment.SpecialFolder.Desktop)}\{String.Concat(OutputFile.Split(Path.GetInvalidFileNameChars))} Cultures.txt"
@@ -280,42 +293,11 @@ Module Program
         Console.ReadKey()
     End Sub
     Private Sub GetLocalisation(ByRef Code As List(Of String), Optional Suffix As String = "")
-        Dim RawRecentLocalisation As New List(Of String) 'Experimental.
         For Count = 0 To Code.Count - 1
             If Not Code(Count) = "" AndAlso Not Code(Count).TrimStart.StartsWith("game_concept") Then
                 Dim RawCode As String = Code(Count) & Suffix 'Modify the code if the object id has a suffix in the loc code.
-                If Not RawRecentLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) AndAlso Not RawLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) AndAlso Not GameConceptLocalisations.ContainsKey(RawCode) Then 'If base game loc or previously parsed files did not contain loc for this object then look for it in the files.
-                    Dim CompareToCheckIfLocWasFound As String = Code(Count) 'Preserve the original object id.
-                    For Each TextFile In LocalisationFiles
-                        Using SR As New StreamReader(TextFile)
-                            While Not SR.EndOfStream
-                                Dim LineData As String = SR.ReadLine
-                                If LineData.TrimStart.StartsWith($"{RawCode}:") Then 'If loc for the object has been found...
-                                    RawRecentLocalisation = RawRecentLocalisation.Concat(File.ReadAllLines(TextFile)).ToList 'Add the files contents into the recently parsed list.
-                                    RawLocalisation = RawLocalisation.Concat(File.ReadAllLines(TextFile)).ToList 'And the overall list.
-                                    If LineData.Split(Chr(34)).Last.Contains("#") Then 'If there are any comments after the actual loc code then remove them.
-                                        LineData = DeComment(LineData)
-                                    End If
-                                    Code(Count) = LineData.Split(Chr(34), 2).Last.TrimEnd.TrimEnd(Chr(34)) 'Remove the quotation marks.
-                                    If Code(Count).Contains("#"c) Then
-                                        Code(Count) = DeFormat(Code(Count)) 'If the loc has any style formatting remove them.
-                                    End If
-                                    If Code(Count).Contains("|E]") Then
-                                        Code(Count) = DeConcept(Code(Count)) 'If the loc has any game concepts then add in the proper names for them.
-                                    End If
-                                    If Code(Count).Contains("$") Then 'If the loc refers to any other loc, then get that loc's name.
-                                        Code(Count) = DeReference(Code(Count))
-                                    End If
-                                    Exit For
-                                End If
-                            End While
-                        End Using
-                    Next
-                    If Code(Count) = CompareToCheckIfLocWasFound Then 'If no loc was found then add in a note.
-                        Code(Count) &= Suffix
-                    End If
-                ElseIf RawRecentLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) Then 'If the loc for the code exists in recently parsed files then get it from there. Note: Not working as intended but not broken.
-                    Code(Count) = RawRecentLocalisation.FindLast(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) 'Find the loc in the list.
+                If SavedLocalisation.Contains(RawCode) Then 'If the locs stored to dictionary contain this loc then...
+                    Code(Count) = SavedLocalisation(RawCode)
 
                     'Process the loc for internal code.
 
@@ -332,28 +314,12 @@ Module Program
                     If Code(Count).Contains("$") Then
                         Code(Count) = DeReference(Code(Count))
                     End If
-                ElseIf RawLocalisation.Exists(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) Then 'If the loc was not in the recently parsed files then check the overall parsed files.
-                    Code(Count) = RawLocalisation.FindLast(Function(x) x.TrimStart.StartsWith($"{RawCode}:")) 'Find the loc in the list.
-
-                    'Process the loc for internal code.
-
-                    If Code(Count).Split(Chr(34)).Last.Contains("#") Then
-                        Code(Count) = DeComment(Code(Count))
-                    End If
-                    Code(Count) = Code(Count).Split(Chr(34), 2).Last.TrimEnd.TrimEnd(Chr(34))
-                    If Code(Count).Contains("#"c) Then
-                        Code(Count) = DeFormat(Code(Count))
-                    End If
-                    If Code(Count).Contains("|E]") Then
-                        Code(Count) = DeConcept(Code(Count))
-                    End If
-                    If Code(Count).Contains("$") Then
-                        Code(Count) = DeReference(Code(Count))
-                    End If
-                ElseIf GameConceptLocalisations.ContainsKey(RawCode) Then
-                    Code(Count) = GameConceptLocalisations(RawCode)
+                ElseIf GameConceptLocalisations.Contains(RawCode) Then 'If game concept locs stored to dictionary contain this loc then...
+                    Code(Count) = GameConceptLocalisations(RawCode) 'Get the loc from the game concept dictionary.
+                Else 'If the locs stored to memory or the game concept locs stored to memory don't contain this loc then...
+                    Code(Count) = RawCode 'Write down the code without any localisation.
                 End If
-            ElseIf Code(Count).TrimStart.StartsWith("game_concept") Then
+            ElseIf Code(Count).TrimStart.StartsWith("game_concept") AndAlso GameConceptLocalisations.Contains(Code(Count).Split("game_concept_", 2).Last.Split(":"c, 2).First) Then 'If the loc starts with game_concept then look for it in the game concept dictionary.
                 Code(Count) = GameConceptLocalisations(Code(Count).Split("game_concept_").Last)
             End If
         Next
@@ -383,6 +349,25 @@ Module Program
             SW.WriteLine(GameDir)
         End Using
     End Sub
+    Sub SaveLocs(TextFile As String)
+        Using SR As New StreamReader(TextFile)
+            Dim LineData As String
+            While Not SR.EndOfStream
+                LineData = SR.ReadLine
+                If Not LineData.TrimStart.StartsWith("#"c) AndAlso LineData.Contains(":"c) AndAlso Not LineData.Split(":"c, 2).Last.Length = 0 Then
+
+                    Dim Key As String = LineData.TrimStart.Split(":"c, 2).First
+                    Dim Value As String = LineData.Split(":"c, 2).Last.Substring(1).TrimStart
+
+                    If Not SavedLocalisation.Contains(Key) Then
+                        SavedLocalisation.Add(Key, Value)
+                    Else
+                        SavedLocalisation(Key) = Value
+                    End If
+                End If
+            End While
+        End Using
+    End Sub
     Function DeComment(Input As String) As String
         Dim Output As List(Of String) = Input.Split(Chr(34)).ToList 'Find the boundaries of the actual loc code by splitting it up according to its quotation marks.
         Output(Output.Count - 1) = Output(Output.Count - 1).Split("#"c).First 'Take the last part of the split input, and split it off from the comment.
@@ -390,20 +375,29 @@ Module Program
     End Function
     Function DeConcept(Input As String) As String
         If Input.Contains("|E]") Then
-            Dim Output As String = Input
+            Dim Output As String = Input 'Save the original string for find and replace operations later.
+            Dim GameConcepts As New SortedList(Of String, String) 'Collect each game concept contained in string here.
             Do
-                Dim GameConcept As String = Split(Split(Output, "[", 2)(1), "|", 2)(0)
-                Dim Finder As String
-                If GameConceptLocalisations.ContainsKey(GameConcept.ToLower) Then
-                    Finder = GameConceptLocalisations(GameConcept.ToLower)
-                Else
-                    Finder = GameConcept
+                Dim GameConcept As String = Output.Split("["c, 2).Last.Split("|"c, 2).First 'Get the game concept object id.
+                If Not GameConcepts.ContainsKey(GameConcept) Then 'If it has not already been collected then...
+                    Dim ReplaceString As String
+                    If GameConceptLocalisations.Contains(GameConcept.ToLower) Then 'Find its loc in the SortedList.
+                        ReplaceString = GameConceptLocalisations(GameConcept.ToLower)
+                    Else
+                        ReplaceString = GameConcept 'If it cannot be found then assign the replace string to be the raw code.
+                    End If
+                    GameConcepts.Add(GameConcept, ReplaceString) 'Add it to the sortedlist and find the rest of the game concepts in this loc string.
+                    Input = Input.Replace($"[{GameConcept}|E]", ReplaceString) 'Remove it from the input string so it is not reparsed into the SortedList.
+                Else 'If it has already been collected...
+                    Input = String.Concat(Input.Split({"[", "|E]"}, 3, StringSplitOptions.None)) 'Remove it from the input string.
                 End If
-                Output = Output.Replace($"[{GameConcept}|E]", Finder)
-            Loop While Output.Contains("|E]")
-            Return Output
+            Loop While Input.Contains("|E]") 'Loop while input loc string contains any non-parsed game concepts.
+            For Each GameConcept In GameConcepts.Keys
+                Output = Output.Replace($"[{GameConcept}|E]", GameConcepts(GameConcept)) 'Now do a find and replace in the output string for each game concept found.
+            Next
+            Return Output 'Return loc.
         Else
-            Return Input
+            Return Input 'Redundancy in case a loc was falsely found to contain a game concept.
         End If
     End Function
     Function DeReference(Input As String) As String
@@ -430,9 +424,25 @@ Module Program
         If Input.Contains("#"c) Then
             Dim Output As String = Input
             Do
-                Dim FormattedLoc As String = Output.Split("#"c, 2).Last.Split("#!", 2).First 'Find the styled part of the loc and extract it.
-                Dim DeFormatted As String = FormattedLoc.Split(" "c, 2).Last 'Remove the style code and store it in a string.
-                Output = Output.Replace($"#{FormattedLoc}#!", DeFormatted) 'Use replace function to replace the formatted part of the loc with the deformatted string.
+                Dim FormattedLoc As String = Output.Split("#"c, 2).Last 'Find the styled part of the loc and extract it.
+                Dim DeFormatted As String
+                With FormattedLoc
+                    Dim CloserIndex As Integer
+                    If .Contains("#!") Then
+                        CloserIndex = .IndexOf("#!") + 2
+                        DeFormatted = .Substring(0, CloserIndex - 2).Split(" "c, 2).Last
+                    ElseIf .Contains("#"c) Then
+                        CloserIndex = .IndexOf("#"c) + 1
+                        DeFormatted = .Substring(0, CloserIndex - 1).Split(" "c, 2).Last
+                    Else
+                        CloserIndex = .Length
+                        DeFormatted = FormattedLoc.Split(" "c, 2).Last
+                    End If
+                    FormattedLoc = "#" & .Substring(0, CloserIndex)
+                End With
+                'Remove the style code and store it in a string.
+
+                Output = Output.Replace(FormattedLoc, DeFormatted) 'Use replace function to replace the formatted part of the loc with the deformatted string.
             Loop While Output.Contains("#"c) 'Loop if there are more.
             Return Output 'Return when there are no more.
         Else
