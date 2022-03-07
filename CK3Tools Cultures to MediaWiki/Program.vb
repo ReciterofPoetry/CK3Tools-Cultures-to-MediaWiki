@@ -9,7 +9,6 @@ End Module
 Module Program
 #Disable Warning IDE0044 ' Add readonly modifier
     Dim GameConceptLocalisations As New Hashtable()
-    Dim RawLocalisation As New List(Of String)
     Dim SavedLocalisation As New Hashtable()
     Dim LocalisationFiles As List(Of String)
 #Enable Warning IDE0044 ' Add readonly modifier
@@ -414,35 +413,17 @@ Module Program
             End While
         End Using
     End Sub
-    Function DeNest(Input As String) As List(Of String)
-        Dim Output As New List(Of String)
-        If Input.Contains("="c) AndAlso Input.Contains("{"c) Then
-            Do
-                Dim RawCodeID As String = Input.Split("{", 2).First 'Get the code id of the object the block is assigned to.
-                Dim RawCodeBlock As String = Input.Split(RawCodeID, 2)(1).Split("{"c, 2)(1) 'Get the rest of the block after the faith id.
-                RawCodeID = RawCodeID.Split({vbCrLf, vbCr, vbLf}, StringSplitOptions.None).Last
-                Do 'Designate subsidiary objects designated with curly brackets as such by replacing their {} with <>.
-                    RawCodeBlock = String.Join(">", String.Join("<", RawCodeBlock.Split("{"c, 2)).Split("}"c, 2))
-                Loop While RawCodeBlock.Split("}", 2)(0).Contains("{"c) 'Loop until no more subsidiary objects.
-                RawCodeBlock = RawCodeBlock.Split("}"c)(0).Replace("<", "{").Replace(">", "}") & "}" 'Get the data of this object by splitting it off of the overall code after its own { closing bracket.
-                If RawCodeID.Contains("="c) Then
-                    Output.Add(String.Join("{", {RawCodeID, RawCodeBlock})) 'Add to List
-                End If
-                Input = Input.Split(RawCodeBlock, 2).Last 'Remove already parsed data from the rest of the unparsed data.
-            Loop While Input.Split("}", 2)(0).Contains("{"c) 'Continue to parse the data until no more faiths can be found by looking for a { starting bracket.
-        End If
-        Return Output
-    End Function
     Function DeComment(Input As String) As String
         Dim Output As List(Of String) = Input.Split(Chr(34)).ToList 'Find the boundaries of the actual loc code by splitting it up according to its quotation marks.
         Output(Output.Count - 1) = Output(Output.Count - 1).Split("#"c).First 'Take the last part of the split input, and split it off from the comment.
         Return String.Join(Chr(34), Output).TrimEnd 'Rejoin the input with quotation marks and return it.
     End Function
     Function DeConcept(Input As String) As String
-        If Input.Contains("|E]") OrElse Input.Contains("|e]") Then
+        If Input.Contains("]"c) AndAlso Input.Split("]"c, 2).First.Contains("["c) AndAlso Input.Split("]"c, 2).First.Split("["c, 2).Last.Contains("|"c) Then
             Dim GameConcepts As New SortedList(Of String, String) 'Collect each game concept contained in string here.
-            Do
+            Do While Input.Contains("]"c) AndAlso Input.Split("]"c, 2).First.Contains("["c) AndAlso Input.Split("]"c, 2).First.Split("["c, 2).Last.Contains("|"c) 'Loop while input loc string contains any non-parsed game concepts.
                 Dim GameConcept As String = Input.Split("["c, 2).Last.Split("|"c, 2).First 'Get the game concept object id.
+                Dim Suffix As String = "|"c & Input.Split("|"c, 2).Last.Split("]"c, 2).First & "]"c
                 If Not GameConcepts.ContainsKey(GameConcept) Then 'If it has not already been collected then...
                     Dim ReplaceString As String
                     If GameConceptLocalisations.Contains(GameConcept.ToLower) Then 'Find its loc in the SortedList.
@@ -451,18 +432,17 @@ Module Program
                         ReplaceString = GameConcept 'If it cannot be found then assign the replace string to be the raw code.
                     End If
                     GameConcepts.Add(GameConcept, ReplaceString) 'Add it to the sortedlist and find the rest of the game concepts in this loc string.
-                    Input = Input.Replace($"[{GameConcept}|E]", ReplaceString).Replace($"[{GameConcept}|e]", ReplaceString) 'Remove it from the input string so it is not reparsed into the SortedList.
+                    Input = Input.Replace($"[{GameConcept}" & Suffix, ReplaceString) 'Remove it from the input string so it is not reparsed into the SortedList.
                 Else 'If it has already been collected...
                     'Input = String.Concat(Input.Split({"[", "|E]"}, 3, StringSplitOptions.None)) 'Remove it from the input string.
-                    Input = Input.Replace($"[{GameConcept}|E]", GameConcepts(GameConcept)).Replace($"[{GameConcept}|e]", GameConcepts(GameConcept))
+                    Input = Input.Replace($"[{GameConcept}" & Suffix, GameConcepts(GameConcept))
                 End If
-            Loop While Input.Contains("|E]") OrElse Input.Contains("|e]") 'Loop while input loc string contains any non-parsed game concepts.
+            Loop
 
             Return Input 'Return loc.
         Else
             Return Input 'Redundancy in case a loc was falsely found to contain a game concept.
         End If
-
     End Function
     Function DeReference(Input As String) As String
         If Input.Contains("$"c) Then
@@ -512,5 +492,31 @@ Module Program
         Else
             Return Input
         End If
+    End Function
+    Function DeNest(Input As String) As List(Of String)
+        Dim Output As New List(Of String)
+        Input = String.Join(vbCrLf, Input.Split({vbCrLf, vbCr, vbLf}, StringSplitOptions.None).ToList.FindAll(Function(x) Not x.TrimStart.StartsWith("#"c)))
+        If Input.Contains("="c) AndAlso Input.Contains("{"c) Then
+            Do
+                Dim RawCodeID As String = Input.Split("{", 2).First 'Get the code id of the object the block is assigned to.
+                Input = Input.Substring(RawCodeID.Length - 1) 'Split off the extracted data.
+                Dim RawCodeBlock As String = Input
+                RawCodeID = RawCodeID.Split({vbCrLf, vbCr, vbLf}, StringSplitOptions.None).Last
+                Do While RawCodeBlock.Split("}"c, 2)(0).Contains("{"c) 'Designate subsidiary objects designated with curly brackets as such by replacing their {} with <>.
+                    RawCodeBlock = String.Join(">"c, String.Join("<"c, RawCodeBlock.Split("{"c, 2)).Split("}"c, 2))
+                Loop  'Loop until no more subsidiary objects.
+                'End If
+                RawCodeBlock = RawCodeBlock.Split("}"c)(0).Replace("<", "{").Replace(">", "}") & "}" 'Get the data of this object by splitting it off of the overall code after its own { closing bracket.
+                If RawCodeID.Contains("="c) Then
+                    Output.Add(String.Join("{", {RawCodeID, RawCodeBlock})) 'Add to List
+                End If
+                If Input.Length > RawCodeBlock.Length Then 'Split off the extracted code block.
+                    Input = Input.Substring(RawCodeBlock.Length - 1)
+                Else
+                    Input = ""
+                End If
+            Loop While Input.Split("}", 2)(0).Contains("{"c) 'Continue to parse the data until no more faiths can be found by looking for a { starting bracket.
+        End If
+        Return Output
     End Function
 End Module
