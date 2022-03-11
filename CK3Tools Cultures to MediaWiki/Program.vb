@@ -1,7 +1,7 @@
 Imports System.IO
 
 Friend Module Props
-    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
+    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2216659254"
     'Property BaseDir As String = "D:\Programs\Steam\steamapps\common\Crusader Kings III\game"
     Property BaseDir As String = Environment.CurrentDirectory
     Property GameDir As String
@@ -499,19 +499,19 @@ Module Program
         If Input.Contains("="c) AndAlso Input.Contains("{"c) Then
             Do
                 Dim RawCodeID As String = Input.Split("{", 2).First 'Get the code id of the object the block is assigned to.
-                Input = Input.Substring(RawCodeID.Length - 1) 'Split off the extracted data.
+                Input = Input.Substring(RawCodeID.Length + 1) 'Split off the extracted data.
                 Dim RawCodeBlock As String = Input
                 RawCodeID = RawCodeID.Split({vbCrLf, vbCr, vbLf}, StringSplitOptions.None).Last
                 Do While RawCodeBlock.Split("}"c, 2)(0).Contains("{"c) 'Designate subsidiary objects designated with curly brackets as such by replacing their {} with <>.
                     RawCodeBlock = String.Join(">"c, String.Join("<"c, RawCodeBlock.Split("{"c, 2)).Split("}"c, 2))
                 Loop  'Loop until no more subsidiary objects.
                 'End If
-                RawCodeBlock = RawCodeBlock.Split("}"c)(0).Replace("<", "{").Replace(">", "}") & "}" 'Get the data of this object by splitting it off of the overall code after its own { closing bracket.
+                RawCodeBlock = RawCodeBlock.Split("}"c)(0).Replace("<", "{").Replace(">", "}") & "}" 'Get the data of this object by splitting it off of the overall code after its own } closing bracket.
                 If RawCodeID.Contains("="c) Then
                     Output.Add(String.Join("{", {RawCodeID, RawCodeBlock})) 'Add to List
                 End If
                 If Input.Length > RawCodeBlock.Length Then 'Split off the extracted code block.
-                    Input = Input.Substring(RawCodeBlock.Length - 1)
+                    Input = Input.Substring(RawCodeBlock.Length)
                 Else
                     Input = ""
                 End If
