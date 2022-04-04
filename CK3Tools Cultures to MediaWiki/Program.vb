@@ -1,7 +1,7 @@
 Imports System.IO
 
 Friend Module Props
-    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2216659254"
+    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
     'Property BaseDir As String = "D:\Programs\Steam\steamapps\common\Crusader Kings III\game"
     Property BaseDir As String = Environment.CurrentDirectory
     Property GameDir As String
@@ -149,7 +149,7 @@ Module Program
             End If
 
             If Block.Contains("color") Then
-                Dim Colour As String = Block.Split("color", 2).Last.Split("="c, 2).Last.Trim.Split({" "c, vbTab, vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.TrimEnd
+                Dim Colour As String = Block.Split("color", StringSplitOptions.None).Last.Split({vbCrLf, vbCr, vbLf}, 2, StringSplitOptions.None).First.Split({"="c, "{"c}).Last.Split("}"c, 2).First.Trim
                 If Not Colour.Replace(" "c, "").Replace("."c, "").All(AddressOf Char.IsDigit) Then
                     If NamedColours.ContainsKey(Colour) Then
                         Colour = NamedColours(Colour)
