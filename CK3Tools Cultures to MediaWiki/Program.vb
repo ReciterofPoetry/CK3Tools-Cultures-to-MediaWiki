@@ -1,9 +1,9 @@
 Imports System.IO
 
 Friend Module Props
-    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
+    Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
     'Property BaseDir As String = "D:\Programs\Steam\steamapps\common\Crusader Kings III\game"
-    Property BaseDir As String = Environment.CurrentDirectory
+    'Property BaseDir As String = Environment.CurrentDirectory
     Property GameDir As String
 End Module
 Module Program
@@ -294,12 +294,25 @@ Module Program
     Sub CollectLocalisations()
         Dim RawGameConceptLocalisations As New Dictionary(Of String, String)
 
+        Dim Langs As List(Of String) = Directory.GetDirectories(GameDir & "\localization").ToList.ConvertAll(Function(x) $"{Path.DirectorySeparatorChar}{x.Split({Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar}).Last}")
+        Langs.Add(Path.DirectorySeparatorChar & "replace")
+        Dim AltDirs As List(Of String) = Directory.EnumerateDirectories(BaseDir & "\localization").ToList.FindAll(Function(x) Not Langs.Contains($"{Path.DirectorySeparatorChar}{x.Split({Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar}).Last}"))
+
         Dim BaseFiles As List(Of String) = Directory.GetFiles(GameDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
         For Each TextFile In BaseFiles
             SaveLocs(TextFile, RawGameConceptLocalisations)
         Next
-        If Directory.Exists(BaseDir & "\localization\english") Then
-            LocalisationFiles = Directory.GetFiles(BaseDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
+
+        If Directory.Exists(BaseDir & "\localization\english") OrElse Not AltDirs.Count = 0 Then
+            If Directory.Exists(BaseDir & "\localization\english") Then
+                LocalisationFiles = Directory.GetFiles(BaseDir & "\localization\english", "*.yml", SearchOption.AllDirectories).ToList
+            End If
+            If Not AltDirs.Count = 0 Then
+                For Each AltDir In AltDirs
+                    'LocalisationFiles = LocalisationFiles.Concat(Directory.GetFiles(BaseDir & "\localization" & AltDir, "*.yml", SearchOption.AllDirectories)).ToList
+                    LocalisationFiles.AddRange(Directory.GetFiles(AltDir, "*.yml", SearchOption.AllDirectories))
+                Next
+            End If
         Else
             Console.WriteLine("Sorry, non-English localisation not currently supported. Press any key to exit.")
             Console.ReadKey()
