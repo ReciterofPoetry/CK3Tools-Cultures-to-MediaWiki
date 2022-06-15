@@ -1,9 +1,9 @@
 Imports System.IO
 
 Friend Module Props
-    Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
+    'Property BaseDir As String = "D:\Programs\Steam\steamapps\workshop\content\1158310\2326030123"
     'Property BaseDir As String = "D:\Programs\Steam\steamapps\common\Crusader Kings III\game"
-    'Property BaseDir As String = Environment.CurrentDirectory
+    Property BaseDir As String = Environment.CurrentDirectory
     Property GameDir As String
 End Module
 Module Program
